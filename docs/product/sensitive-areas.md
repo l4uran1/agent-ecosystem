@@ -3,7 +3,7 @@
 <!--
   TEMPLATE: one section per area, following the example. Delete the example and these
   comments. Keep the list short: if everything is sensitive, nothing is.
-  The list must match the sensitive areas in AGENTS.md and openspec/config.yaml.
+  This is the only list of sensitive areas: AGENTS.md and openspec/config.yaml point here.
 -->
 
 A mistake in these areas directly hurts customers or their trust in the product.

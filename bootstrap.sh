@@ -7,6 +7,11 @@
 #   ./bootstrap.sh status     show the branch and state of each repo
 #   ./bootstrap.sh branch X   create (from the main branch) or switch to branch X in the given repos:
 #                             ./bootstrap.sh branch feature/add-dark-mode api web
+#   ./bootstrap.sh check-approved ID
+#                             exit 0 only if the proposal ID is merged into the ecosystem main branch
+#   ./bootstrap.sh doctor     check the ecosystem repo is filled in and set up (placeholders, TODOs,
+#                             OpenSpec, system map age, files left out by .gitignore)
+#   ./bootstrap.sh tests      run the tests of this script (and shellcheck, if installed)
 #
 # Safe to run as often as you like: it never deletes anything, never switches your
 # branch and never touches your files. If a repo is on another branch, its main
@@ -132,25 +137,190 @@ cmd_branch() {
   local name="${1:?Give the branch name}"; shift
   [[ $# -gt 0 ]] || { echo "Give the affected repos, e.g.: branch $name api web"; exit 1; }
 
+  # Keeps going after a failure so the other repos still get the branch, but exits
+  # non-zero if any repo failed: callers (people or agents) must not miss it.
+  local failed=0
   for dir in "$@"; do
-    [[ -d "$dir/.git" ]] || { echo "!! $dir is not cloned"; continue; }
+    [[ -d "$dir/.git" ]] || { echo "!! $dir is not cloned"; failed=$((failed + 1)); continue; }
     if git -C "$dir" show-ref --verify --quiet "refs/heads/$name"; then
-      git -C "$dir" switch --quiet "$name" && echo "   $dir: switched to $name"
+      if git -C "$dir" switch --quiet "$name"; then
+        echo "   $dir: switched to $name"
+      else
+        echo "!! $dir: could not switch to $name"; failed=$((failed + 1))
+      fi
     else
       # New branches always start from the latest main branch on the remote,
       # even if the repo is on another branch or its local main branch is behind.
       local main
       main="$(main_branch_of "$dir")"
-      git -C "$dir" fetch --quiet origin "$main" \
-        && git -C "$dir" switch --quiet --no-track -c "$name" "origin/$main" \
-        && echo "-> $dir: created $name from $main"
+      if git -C "$dir" fetch --quiet origin "$main" \
+        && git -C "$dir" switch --quiet --no-track -c "$name" "origin/$main"; then
+        echo "-> $dir: created $name from $main"
+      else
+        echo "!! $dir: could not create $name from $main"; failed=$((failed + 1))
+      fi
     fi
   done
+
+  [[ $failed -eq 0 ]] || { echo; echo "Errors: $failed"; return 1; }
+}
+
+# Main branch of the ecosystem repo itself: the remote's default branch if git knows it,
+# otherwise DEFAULT_BRANCH.
+ecosystem_branch() {
+  local head
+  head="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  if [[ -n "$head" ]]; then echo "${head#origin/}"; else echo "$DEFAULT_BRANCH"; fi
+}
+
+# A proposal is approved when its PR is merged: its proposal.md is on the remote main
+# branch, either still in openspec/changes/ or already archived.
+cmd_check_approved() {
+  local id="${1:-}"
+  [[ "$id" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] \
+    || { echo "Give the change id in kebab-case, e.g.: check-approved add-dark-mode"; return 1; }
+
+  local main archived
+  main="$(ecosystem_branch)"
+  git fetch --quiet origin "$main" || { echo "!! could not fetch $main from the remote"; return 1; }
+
+  if git cat-file -e "origin/$main:openspec/changes/$id/proposal.md" 2>/dev/null; then
+    echo "$id: approved (proposal merged into $main)"; return 0
+  fi
+  archived="$(git ls-tree -r --name-only "origin/$main" -- openspec/changes/archive/)"
+  if grep -qE "^openspec/changes/archive/[0-9]{4}-[0-9]{2}-[0-9]{2}-$id/proposal\.md$" <<< "$archived"; then
+    echo "$id: approved (proposal merged into $main and already archived)"; return 0
+  fi
+  echo "!! $id: not approved. openspec/changes/$id/proposal.md is not on $main yet: its PR must be merged first."
+  return 1
+}
+
+# Files a team fills in when adopting the template.
+context_files() {
+  local f
+  for f in AGENTS.md openspec/config.yaml docs/system-map.md docs/product/*.md docs/product/decisions/[0-9]*.md; do
+    [[ -f "$f" && "$f" != */README.md ]] && echo "$f"
+  done
+}
+
+# Prints "P file:line: <token>" for each unfilled placeholder and "T file:line: text" for
+# each TODO, ignoring HTML comments. <id>, <change-id>, <repo> and <short-description>
+# are notation used by the rules themselves, not placeholders.
+scan_context() {
+  awk '
+    FNR == 1 { in_comment = 0 }
+    {
+      line = $0; text = ""
+      while (line != "") {
+        if (in_comment) {
+          i = index(line, "-->"); if (!i) break
+          line = substr(line, i + 3); in_comment = 0
+        } else {
+          i = index(line, "<!--"); if (!i) { text = text line; break }
+          text = text substr(line, 1, i - 1); line = substr(line, i + 4); in_comment = 1
+        }
+      }
+      if (text ~ /TODO:/) print "T " FILENAME ":" FNR ": " text
+      while (match(text, /<[^<>]+>/)) {
+        token = substr(text, RSTART, RLENGTH)
+        if (token !~ /^<(id|change-id|repo|short-description)>$/) print "P " FILENAME ":" FNR ": " token
+        text = substr(text, RSTART + RLENGTH)
+      }
+    }' "$@"
+}
+
+# Seconds since the epoch for a YYYY-MM-DD date, with GNU date or BSD/macOS date.
+to_epoch() {
+  date -d "$1" +%s 2>/dev/null || date -j -f %Y-%m-%d "$1" +%s 2>/dev/null
+}
+
+cmd_doctor() {
+  local errors=0 warnings=0 kind rest f
+  local files=()
+  while read -r f; do files+=("$f"); done < <(context_files)
+
+  # Placeholders are errors: the agent would read them as real values. TODOs are warnings.
+  if [[ ${#files[@]} -gt 0 ]]; then
+    while read -r kind rest; do
+      if [[ "$kind" == P ]]; then
+        echo "!! $rest  (placeholder not filled in)"; errors=$((errors + 1))
+      else
+        echo "   $rest"; warnings=$((warnings + 1))
+      fi
+    done < <(scan_context "${files[@]}")
+
+    for f in "${files[@]}"; do
+      if grep -q 'TEMPLATE:' "$f"; then
+        echo "   $f: TEMPLATE comment still in place; delete it once the file is filled in"
+        warnings=$((warnings + 1))
+      fi
+    done
+  fi
+
+  # OpenSpec must be initialised: its folders exist and it generated commands or skills
+  # for at least one agent (.claude/, .cursor/, .agents/, .github/...).
+  local generated=""
+  for f in .[!.]*/; do
+    [[ -d "$f" && "$f" != .git/ ]] || continue
+    generated="$(find "$f" -maxdepth 3 \( -name '*opsx*' -o -name 'openspec-*' \) -print 2>/dev/null | head -n 1)"
+    [[ -n "$generated" ]] && break
+  done
+  if [[ ! -d openspec/specs || ! -d openspec/changes || -z "$generated" ]]; then
+    echo "!! OpenSpec is not set up for any agent: run openspec init (SETUP.md, step 3)"
+    errors=$((errors + 1))
+  fi
+
+  # The system map must be reviewed regularly: an outdated map misleads the agent.
+  local max_age="${MAP_MAX_AGE_DAYS:-90}" reviewed epoch age
+  if [[ -f docs/system-map.md ]]; then
+    reviewed="$(sed -n 's/^Last reviewed: *\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p' docs/system-map.md | head -n 1)"
+    if [[ -n "$reviewed" ]] && epoch="$(to_epoch "$reviewed")"; then
+      age=$(( ($(date +%s) - epoch) / 86400 ))
+      if [[ $age -gt $max_age ]]; then
+        echo "   docs/system-map.md: last reviewed $reviewed, $age days ago (limit: $max_age)"
+        warnings=$((warnings + 1))
+      fi
+    elif ! grep -q '^Last reviewed: *<' docs/system-map.md; then
+      echo "   docs/system-map.md: no 'Last reviewed: YYYY-MM-DD' line"
+      warnings=$((warnings + 1))
+    fi
+  fi
+
+  # Anything ignored that is not a service repo never reaches the rest of the team.
+  if git rev-parse --git-dir > /dev/null 2>&1; then
+    local services path top
+    services=" $(read_repos | awk '{printf "%s ", $1}')"
+    while read -r path; do
+      top="${path%%/*}"
+      [[ "$services" == *" $top "* || "$path" == .claude/settings.local.json ]] && continue
+      echo "   $path: ignored by .gitignore; if the team needs it, add it with '!' (see .gitignore)"
+      warnings=$((warnings + 1))
+    done < <(git status --ignored --porcelain | sed -n 's/^!! //p')
+  fi
+
+  echo
+  echo "Errors: $errors · Warnings: $warnings"
+  [[ $errors -eq 0 ]]
+}
+
+# Runs the tests of this script, then shellcheck if it is installed.
+cmd_tests() {
+  local code=0
+  "$ROOT/tests/bootstrap.test.sh" || code=$?
+  if command -v shellcheck > /dev/null; then
+    shellcheck "$ROOT/bootstrap.sh" "$ROOT/tests/bootstrap.test.sh" || { [[ $code -ne 0 ]] || code=1; }
+  else
+    echo "   shellcheck is not installed: lint skipped"
+  fi
+  return "$code"
 }
 
 case "${1:-}" in
   status) cmd_status ;;
   branch) shift; cmd_branch "$@" ;;
+  check-approved) shift; cmd_check_approved "$@" ;;
+  doctor) cmd_doctor ;;
+  tests) cmd_tests ;;
   ""|--all) cmd_sync "${1:-}" ;;
-  *) sed -n '2,13p' "$0"; exit 1 ;;
+  *) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 1 ;;
 esac

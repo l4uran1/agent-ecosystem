@@ -20,6 +20,7 @@
 !/docs/
 !/openspec/
 !/templates/
+!/tests/
 
 # Agent configuration (add the folders `openspec init` creates for your agents)
 !/AGENTS.md
