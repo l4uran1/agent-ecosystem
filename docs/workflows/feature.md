@@ -65,7 +65,8 @@ reviewer sees the impact before any code exists.
 
 Someone who knows that part of the product reviews and merges the proposal's PR. Reviewing
 two pages of spec is much cheaper than reviewing a thousand lines of wrong code. The agent
-will not implement until the proposal is on the main branch.
+will not implement until the proposal is on the main branch: it checks with
+`./bootstrap.sh check-approved <id>`, which anyone can also run.
 
 **The PR description is the review.** OpenSpec writes several files, and not all of them are
 for people. When `/opsx:propose` finishes, the agent offers to open the PR and writes its

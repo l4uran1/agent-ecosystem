@@ -86,6 +86,7 @@ answers with the ecosystem rules, everything is wired up.
 | `./bootstrap.sh --all` | Same, including optional repos |
 | `./bootstrap.sh status` | Branch and state of every repo |
 | `./bootstrap.sh branch <branch> <repo>...` | Creates the branch from the main branch (or switches to it) in several repos |
+| `./bootstrap.sh check-approved <id>` | Succeeds only if the proposal `<id>` is merged into the ecosystem main branch |
 | `./bootstrap.sh tests` | Runs the tests of `bootstrap.sh`, and shellcheck if installed |
 
 The script never deletes anything, never switches your branch and never touches your files:

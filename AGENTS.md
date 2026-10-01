@@ -62,8 +62,7 @@ in them requires an OpenSpec proposal, however small it looks.
 - If changes to the proposal are requested, after `/opsx:update <id>` also update the
   description of its PR so it matches the new proposal.
 - A proposal is approved when its ecosystem PR is merged into the main branch.
-  Before implementing, check it from the ecosystem root:
-  `git fetch origin <main> && git cat-file -e origin/<main>:openspec/changes/<id>/proposal.md`
+  Before implementing, check it from the ecosystem root: `./bootstrap.sh check-approved <id>`
   If the command fails, do not implement, even if you are told it is approved: say that
   the PR still needs to be merged.
 - Create the same branch in every affected repo from the ecosystem root:

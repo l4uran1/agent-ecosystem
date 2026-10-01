@@ -7,6 +7,8 @@
 #   ./bootstrap.sh status     show the branch and state of each repo
 #   ./bootstrap.sh branch X   create (from the main branch) or switch to branch X in the given repos:
 #                             ./bootstrap.sh branch feature/add-dark-mode api web
+#   ./bootstrap.sh check-approved ID
+#                             exit 0 only if the proposal ID is merged into the ecosystem main branch
 #   ./bootstrap.sh tests      run the tests of this script (and shellcheck, if installed)
 #
 # Safe to run as often as you like: it never deletes anything, never switches your
@@ -161,6 +163,36 @@ cmd_branch() {
   [[ $failed -eq 0 ]] || { echo; echo "Errors: $failed"; return 1; }
 }
 
+# Main branch of the ecosystem repo itself: the remote's default branch if git knows it,
+# otherwise DEFAULT_BRANCH.
+ecosystem_branch() {
+  local head
+  head="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  if [[ -n "$head" ]]; then echo "${head#origin/}"; else echo "$DEFAULT_BRANCH"; fi
+}
+
+# A proposal is approved when its PR is merged: its proposal.md is on the remote main
+# branch, either still in openspec/changes/ or already archived.
+cmd_check_approved() {
+  local id="${1:-}"
+  [[ "$id" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] \
+    || { echo "Give the change id in kebab-case, e.g.: check-approved add-dark-mode"; return 1; }
+
+  local main archived
+  main="$(ecosystem_branch)"
+  git fetch --quiet origin "$main" || { echo "!! could not fetch $main from the remote"; return 1; }
+
+  if git cat-file -e "origin/$main:openspec/changes/$id/proposal.md" 2>/dev/null; then
+    echo "$id: approved (proposal merged into $main)"; return 0
+  fi
+  archived="$(git ls-tree -r --name-only "origin/$main" -- openspec/changes/archive/)"
+  if grep -qE "^openspec/changes/archive/[0-9]{4}-[0-9]{2}-[0-9]{2}-$id/proposal\.md$" <<< "$archived"; then
+    echo "$id: approved (proposal merged into $main and already archived)"; return 0
+  fi
+  echo "!! $id: not approved. openspec/changes/$id/proposal.md is not on $main yet: its PR must be merged first."
+  return 1
+}
+
 # Runs the tests of this script, then shellcheck if it is installed.
 cmd_tests() {
   local code=0
@@ -176,6 +208,7 @@ cmd_tests() {
 case "${1:-}" in
   status) cmd_status ;;
   branch) shift; cmd_branch "$@" ;;
+  check-approved) shift; cmd_check_approved "$@" ;;
   tests) cmd_tests ;;
   ""|--all) cmd_sync "${1:-}" ;;
   *) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 1 ;;
