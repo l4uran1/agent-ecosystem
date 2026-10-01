@@ -46,6 +46,7 @@ your-ecosystem/                 ← this template
 │   └── workflows/              ← step-by-step guides: features and bug fixes
 ├── openspec/                   ← specs and changes for the whole system
 ├── templates/                  ← proposal PR description; AGENTS.md and PR template per service repo
+├── tests/                      ← tests for bootstrap.sh: tests/bootstrap.test.sh
 ├── api/                        ← service repos: own git, ignored by the ecosystem repo
 ├── web/
 └── worker/
@@ -85,6 +86,7 @@ answers with the ecosystem rules, everything is wired up.
 | `./bootstrap.sh --all` | Same, including optional repos |
 | `./bootstrap.sh status` | Branch and state of every repo |
 | `./bootstrap.sh branch <branch> <repo>...` | Creates the branch from the main branch (or switches to it) in several repos |
+| `./bootstrap.sh tests` | Runs the tests of `bootstrap.sh`, and shellcheck if installed |
 
 The script never deletes anything, never switches your branch and never touches your files:
 

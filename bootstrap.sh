@@ -7,6 +7,7 @@
 #   ./bootstrap.sh status     show the branch and state of each repo
 #   ./bootstrap.sh branch X   create (from the main branch) or switch to branch X in the given repos:
 #                             ./bootstrap.sh branch feature/add-dark-mode api web
+#   ./bootstrap.sh tests      run the tests of this script (and shellcheck, if installed)
 #
 # Safe to run as often as you like: it never deletes anything, never switches your
 # branch and never touches your files. If a repo is on another branch, its main
@@ -132,25 +133,50 @@ cmd_branch() {
   local name="${1:?Give the branch name}"; shift
   [[ $# -gt 0 ]] || { echo "Give the affected repos, e.g.: branch $name api web"; exit 1; }
 
+  # Keeps going after a failure so the other repos still get the branch, but exits
+  # non-zero if any repo failed: callers (people or agents) must not miss it.
+  local failed=0
   for dir in "$@"; do
-    [[ -d "$dir/.git" ]] || { echo "!! $dir is not cloned"; continue; }
+    [[ -d "$dir/.git" ]] || { echo "!! $dir is not cloned"; failed=$((failed + 1)); continue; }
     if git -C "$dir" show-ref --verify --quiet "refs/heads/$name"; then
-      git -C "$dir" switch --quiet "$name" && echo "   $dir: switched to $name"
+      if git -C "$dir" switch --quiet "$name"; then
+        echo "   $dir: switched to $name"
+      else
+        echo "!! $dir: could not switch to $name"; failed=$((failed + 1))
+      fi
     else
       # New branches always start from the latest main branch on the remote,
       # even if the repo is on another branch or its local main branch is behind.
       local main
       main="$(main_branch_of "$dir")"
-      git -C "$dir" fetch --quiet origin "$main" \
-        && git -C "$dir" switch --quiet --no-track -c "$name" "origin/$main" \
-        && echo "-> $dir: created $name from $main"
+      if git -C "$dir" fetch --quiet origin "$main" \
+        && git -C "$dir" switch --quiet --no-track -c "$name" "origin/$main"; then
+        echo "-> $dir: created $name from $main"
+      else
+        echo "!! $dir: could not create $name from $main"; failed=$((failed + 1))
+      fi
     fi
   done
+
+  [[ $failed -eq 0 ]] || { echo; echo "Errors: $failed"; return 1; }
+}
+
+# Runs the tests of this script, then shellcheck if it is installed.
+cmd_tests() {
+  local code=0
+  "$ROOT/tests/bootstrap.test.sh" || code=$?
+  if command -v shellcheck > /dev/null; then
+    shellcheck "$ROOT/bootstrap.sh" "$ROOT/tests/bootstrap.test.sh" || { [[ $code -ne 0 ]] || code=1; }
+  else
+    echo "   shellcheck is not installed: lint skipped"
+  fi
+  return "$code"
 }
 
 case "${1:-}" in
   status) cmd_status ;;
   branch) shift; cmd_branch "$@" ;;
+  tests) cmd_tests ;;
   ""|--all) cmd_sync "${1:-}" ;;
-  *) sed -n '2,13p' "$0"; exit 1 ;;
+  *) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 1 ;;
 esac
