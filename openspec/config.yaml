@@ -1,0 +1,35 @@
+# openspec/config.yaml (ecosystem root)
+#
+# TEMPLATE: replace the `context` with your own and keep the `rules`.
+# If `openspec init` adds other keys to this file, keep them.
+
+schema: spec-driven
+
+# Injected into everything OpenSpec generates. Keep it short: only what the agent
+# cannot work out by reading the code and that changes how a proposal is designed.
+context: |
+  Product: <one or two lines on what the product does and for whom>.
+
+  Structure: every folder in the ecosystem repo is a service repo with its own git
+  (<list the repos>). Contracts between services (queues, pub/sub channels,
+  internal endpoints, shared tables) are in docs/system-map.md.
+
+  Stack: <one line per group of services, without versions>.
+
+  Constraints: <external limits that rule out designs, e.g. app store review,
+  third-party API quotas, regulatory requirements>.
+
+  Sensitive areas: <list>. A mistake there directly hurts customers' trust.
+
+  Language: write proposals, specs and tasks in <language>.
+
+rules:
+  proposal:
+    - List the ecosystem repos that are affected
+    - Check docs/system-map.md and list the queues, channels, internal endpoints or shared tables that change
+    - Say whether it touches a sensitive area and, if so, the risk for users
+    - Include a rollback plan
+  tasks:
+    - Say which repo each task is done in
+    - Every task starts with the test that must fail before implementing
+    - The last task of each repo is running its tests, lint and build

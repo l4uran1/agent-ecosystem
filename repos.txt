@@ -1,0 +1,17 @@
+# Repos in the ecosystem — replace these examples with your own.
+#
+# Format: <folder>  <remote url>  <group>  [main branch]
+#   group:       core (everyone clones it) · optional (only with ./bootstrap.sh --all)
+#   main branch: optional; defaults to DEFAULT_BRANCH in bootstrap.sh (main)
+#
+# Always use the canonical URL here. People who reach the git host through an SSH
+# alias or HTTPS map it on their machine with `git config url.<...>.insteadOf` (see README).
+#
+# Adding a repo: one line here and a PR/MR to the ecosystem repo. Nothing else.
+
+api            git@github.com:acme/api.git            core
+auth           git@github.com:acme/auth.git           core
+web            git@github.com:acme/web.git            core
+worker         git@github.com:acme/worker.git         core
+notifications  git@github.com:acme/notifications.git  core   master
+e2e-tests      git@github.com:acme/e2e-tests.git      optional

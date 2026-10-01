@@ -1,0 +1,33 @@
+# The ecosystem repo only versions its own files. Everything else (the service repos)
+# is ignored without listing it: adding a repo never requires touching this file.
+#
+# If a tool creates a new file or folder at the root (e.g. `openspec init` for another
+# agent), add it here with "!" or it will never reach the rest of the team.
+# To check what is being left out: git status --ignored
+
+/*
+
+# Ecosystem files
+!/.gitignore
+!/.gitattributes
+!/.github/
+!/.gitlab/
+!/LICENSE
+!/README.md
+!/SETUP.md
+!/bootstrap.sh
+!/repos.txt
+!/docs/
+!/openspec/
+!/templates/
+
+# Agent configuration (add the folders `openspec init` creates for your agents)
+!/AGENTS.md
+!/CLAUDE.md
+!/.claude/
+# !/.cursor/
+# !/.agents/
+# !/.github/  (already included above: GitHub Copilot writes there)
+
+# Personal Claude Code settings: never shared
+/.claude/settings.local.json

@@ -1,0 +1,5 @@
+# Collapse the parts of an OpenSpec proposal that are not meant for human review.
+# They stay in the PR, but GitHub and GitLab show them collapsed in the diff, so
+# reviewers go straight to proposal.md and the specs.
+openspec/changes/**/tasks.md          linguist-generated=true gitlab-generated
+openspec/changes/**/.openspec.yaml    linguist-generated=true gitlab-generated
