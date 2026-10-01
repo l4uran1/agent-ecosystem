@@ -56,6 +56,18 @@ check() {
   check_output "$desc" "$expected" "" "$@"
 }
 
+# check_absent <description> <regex the output must not match> <command...>
+check_absent() {
+  local desc="$1" pattern="$2"; shift 2
+  local out
+  out="$("$@" 2>&1)"
+  if grep -qE -- "$pattern" <<< "$out"; then
+    fail "$desc" "output must not match /$pattern/" "$out"
+  else
+    pass "$desc"
+  fi
+}
+
 # --- branch ---------------------------------------------------------------
 # The failing repo goes first: a failure must not be hidden by a later success.
 
@@ -151,6 +163,63 @@ check "check-approved: exits 1 without an id" 1 \
   bash -c "cd '$eco' && ./bootstrap.sh check-approved"
 check "check-approved: exits 1 with an id that is not kebab-case" 1 \
   bash -c "cd '$eco' && ./bootstrap.sh check-approved ../add-dark-mode"
+
+# --- doctor ---------------------------------------------------------------
+
+# A filled-in ecosystem repo with OpenSpec initialised. Prints its folder.
+setup_filled() {
+  local eco="$TMP/$1/eco"
+  mkdir -p "$eco/docs/product/decisions" "$eco/openspec/specs" "$eco/openspec/changes" \
+    "$eco/.claude/commands/opsx" "$eco/api/.git"
+  git init -q -b main "$eco"
+  cp "$SCRIPT" "$(dirname "$SCRIPT")/.gitignore" "$eco/"
+  echo "api git@example.com:acme/api.git core" > "$eco/repos.txt"
+  printf '# Acme ecosystem\n\nMain branch: main. Branches: feature/<change-id>.\n' > "$eco/AGENTS.md"
+  printf 'schema: spec-driven\ncontext: |\n  Product: invoicing for small shops.\n' > "$eco/openspec/config.yaml"
+  printf '# System map\n\nLast reviewed: %s\n\n| api | user:<id>:events |\n' "$(date +%Y-%m-%d)" > "$eco/docs/system-map.md"
+  printf '# Sensitive areas\n\n## Payments\n' > "$eco/docs/product/sensitive-areas.md"
+  printf '# 0001 · Ecosystem repo\n\n- Date: 2026-01-15\n' > "$eco/docs/product/decisions/0001-ecosystem-repo.md"
+  echo opsx > "$eco/.claude/commands/opsx/propose.md"
+  echo "$eco"
+}
+
+eco="$(setup_filled doctor-ok)"
+check "doctor: exits 0 on a filled-in ecosystem repo" 0 \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+
+eco="$(setup_filled doctor-placeholder)"
+printf '# <Company> ecosystem\n<!-- <ignored in comments> -->\n' > "$eco/AGENTS.md"
+check_output "doctor: exits 1 and names the file when a placeholder is left" 1 "AGENTS.md.*<Company>" \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+check_absent "doctor: ignores placeholders inside HTML comments" "ignored in comments" \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+
+eco="$(setup_filled doctor-no-openspec)"
+rm -rf "$eco/.claude/commands" "$eco/openspec/specs"
+check_output "doctor: exits 1 when openspec init has not been run" 1 "openspec init" \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+
+eco="$(setup_filled doctor-todo)"
+echo "- TODO: who owns the worker?" >> "$eco/docs/product/sensitive-areas.md"
+check_output "doctor: warns about TODOs without failing" 0 "sensitive-areas.md.*TODO" \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+
+eco="$(setup_filled doctor-template-comment)"
+printf '<!--\n  TEMPLATE: replace the example rows.\n-->\n' >> "$eco/docs/system-map.md"
+check_output "doctor: warns about template comments left in place" 0 "system-map.md.*TEMPLATE" \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+
+eco="$(setup_filled doctor-stale-map)"
+sed -i.bak 's/^Last reviewed: .*/Last reviewed: 2020-01-01/' "$eco/docs/system-map.md" && rm "$eco/docs/system-map.md.bak"
+check_output "doctor: warns when the system map has not been reviewed for a long time" 0 "system-map.md.*2020-01-01" \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+
+eco="$(setup_filled doctor-ignored)"
+mkdir -p "$eco/.cursor/commands" && echo x > "$eco/.cursor/commands/opsx-propose.md"
+check_output "doctor: warns about ignored folders that are not service repos" 0 "\.cursor" \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+check_absent "doctor: does not warn about service repos" "api/" \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
 
 echo
 echo "Passed: $passed · Failed: $failed"

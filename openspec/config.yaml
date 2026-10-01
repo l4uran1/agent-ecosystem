@@ -19,7 +19,8 @@ context: |
   Constraints: <external limits that rule out designs, e.g. app store review,
   third-party API quotas, regulatory requirements>.
 
-  Sensitive areas: <list>. A mistake there directly hurts customers' trust.
+  Sensitive areas: listed in docs/product/sensitive-areas.md. A mistake there
+  directly hurts customers' trust.
 
   Language: write proposals, specs and tasks in <language>.
 
@@ -27,7 +28,7 @@ rules:
   proposal:
     - List the ecosystem repos that are affected
     - Check docs/system-map.md and list the queues, channels, internal endpoints or shared tables that change
-    - Say whether it touches a sensitive area and, if so, the risk for users
+    - Check docs/product/sensitive-areas.md and say whether it touches a sensitive area and, if so, the risk for users
     - Include a rollback plan
   tasks:
     - Say which repo each task is done in

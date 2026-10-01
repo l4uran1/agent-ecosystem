@@ -72,7 +72,7 @@ mark anything unknown as `TODO:` and resolve it before the pilot.
 
 | File | What to write |
 | --- | --- |
-| `AGENTS.md` | Company name, main branch, git host CLI, sensitive areas |
+| `AGENTS.md` | Company name, main branch, git host CLI |
 | `openspec/config.yaml` | The `context` block: product, repos, stack, constraints, language |
 | `docs/system-map.md` | Contracts between services. Start with the ones that have broken before |
 | `docs/product/sensitive-areas.md` | The few areas where a mistake hurts customers, and known risks |
@@ -80,8 +80,13 @@ mark anything unknown as `TODO:` and resolve it before the pilot.
 | `docs/product/glossary.md` | Domain terms the team uses |
 | `docs/product/decisions/` | Date and accept decision 0001, or adapt it |
 
-Keep the sensitive areas identical in `AGENTS.md`, `openspec/config.yaml` and
-`docs/product/sensitive-areas.md`.
+The sensitive areas live only in `docs/product/sensitive-areas.md`: `AGENTS.md` and
+`openspec/config.yaml` point to it, so there is a single list to keep up to date.
+
+Then run `./bootstrap.sh doctor`. It fails while a `<placeholder>` is left or OpenSpec is not
+set up, and warns about `TODO:`s, template comments still in place, a system map not reviewed
+in 90 days (`MAP_MAX_AGE_DAYS` changes the limit) and files `.gitignore` leaves out. Repeat
+until it shows no errors, and resolve the warnings before the pilot.
 
 ## 6. Set up the service repos
 
@@ -89,6 +94,9 @@ For each service repo:
 
 - Copy `templates/service-repo/AGENTS.md` to its root and fill in its commands. If it already
   has an `AGENTS.md` or `CLAUDE.md`, check it does not contradict the shared rules.
+- If the team uses Claude Code, also copy `templates/service-repo/CLAUDE.md`: Claude Code
+  does not read `AGENTS.md` on its own, and this one-line file imports it, so the repo's
+  commands load as soon as the agent works in that folder.
 - Copy `templates/service-repo/pull_request_template.md` to `.github/pull_request_template.md`
   (GitHub) or `.gitlab/merge_request_templates/Default.md` (GitLab). GitLab Premium can
   define it once at group level instead.

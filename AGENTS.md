@@ -43,8 +43,8 @@ inside a single service.
 `docs/product/` holds the sensitive areas, external constraints, glossary and past
 decisions. Read it when a change affects user-visible behaviour.
 
-Sensitive areas (<list them, e.g. payments, authentication, data exports>): any change
-in them requires an OpenSpec proposal, however small it looks.
+The sensitive areas are listed in `docs/product/sensitive-areas.md`, and only there:
+any change in them requires an OpenSpec proposal, however small it looks.
 
 ## Workflow: new features (OpenSpec)
 
