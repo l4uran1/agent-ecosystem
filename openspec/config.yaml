@@ -31,6 +31,6 @@ rules:
     - Check docs/product/sensitive-areas.md and say whether it touches a sensitive area and, if so, the risk for users
     - Include a rollback plan
   tasks:
-    - Say which repo each task is done in
+    - Tag each task with the repo it is done in, right after its number, e.g. "- [ ] 1.1 (<repo>) ..."; bootstrap.sh reads these tags to create the branches
     - Every task starts with the test that must fail before implementing
     - The last task of each repo is running its tests, lint and build

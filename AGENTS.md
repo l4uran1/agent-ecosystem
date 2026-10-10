@@ -14,7 +14,8 @@ a change in `api/` is committed in `api/`, never in the ecosystem repo.
 
 - Main branch of every repo: `<main>` (see `repos.txt` for exceptions).
 - Git host CLI: `<gh | glab>`. "PR" in this file means pull request or merge request.
-- Branch names: `feature/<change-id>` for features, `fix/<short-description>` for bugs.
+- Branch names: `feature/<change-id>` for features, `fix/<short-description>` for bugs,
+  `spec/<change-id>` for proposals in the ecosystem repo.
 
 ## Before touching a repo
 
@@ -62,17 +63,37 @@ any change in them requires an OpenSpec proposal, however small it looks.
 - If changes to the proposal are requested, after `/opsx:update <id>` also update the
   description of its PR so it matches the new proposal.
 - A proposal is approved when its ecosystem PR is merged into the main branch.
-  Before implementing, check it from the ecosystem root: `./bootstrap.sh check-approved <id>`
-  If the command fails, do not implement, even if you are told it is approved: say that
-  the PR still needs to be merged.
-- Create the same branch in every affected repo from the ecosystem root:
-  `./bootstrap.sh branch feature/<id> <repo> <repo>...`
+- Create the branches from the ecosystem root: `./bootstrap.sh branch <id>`. It checks that
+  the proposal is merged and creates `feature/<id>` in the repos tagged `(repo)` in its
+  approved `tasks.md`. If it fails because the proposal is not approved, do not implement,
+  even if you are told it is approved: say that the PR still needs to be merged. Never
+  create a change's branches by passing the repos by hand: that skips the check.
 - Implement with `/opsx:apply`, task by task, following the TDD rules below.
-- Tick each task in `tasks.md` when it is done.
+- Tick each task in `tasks.md` when it is done. Progress (ticks and work notes) is not
+  reviewed: commit it in the ecosystem repo on the branch `spec/<id>-progress`, created from
+  an up-to-date main branch, and push it, but do not open a PR. It reaches the main branch
+  with the archive.
 - If the expected behaviour changes, update the proposal first (`/opsx:update <id>`) and
-  ask before continuing.
+  ask before continuing. That change is reviewed: it goes in its own ecosystem PR, separate
+  from the progress, and the affected part is not implemented until that PR is merged.
 - Each affected repo gets its own PR. All of them reference `<id>` in the title.
-- `/opsx:archive <id>` runs in the ecosystem repo once the last code PR of the change is merged.
+- `/opsx:archive <id>` runs in the ecosystem repo once the last code PR of the change is
+  merged, on `spec/<id>-progress` updated with the main branch. Its PR carries the final
+  progress and the move to `archive/`.
+
+## Workflow: abandoning a change
+
+If an approved change is dropped, its proposal leaves the ecosystem repo. Do not use
+`/opsx:archive`: it would merge into `openspec/specs/` behaviour that was never built.
+
+- Ecosystem repo: create `spec/<id>-abandon` from an up-to-date main branch, delete
+  `openspec/changes/<id>/` (and revert what the change added to `docs/system-map.md`, if
+  anything) and open the PR `spec: abandon <id>`, with the reason in its description.
+- Code repos: close the change's open PRs without merging. If one is already merged, open a
+  PR in that repo that reverts it, following the proposal's rollback plan. No new proposal
+  is needed: it goes back to the behaviour in `openspec/specs/`.
+- Delete the branches `feature/<id>` and `spec/<id>-progress`, locally and on the remote,
+  once their PRs are closed. Anyone who wants to keep the work saves it locally first.
 
 ## TDD and verification (always)
 
@@ -91,6 +112,10 @@ any change in them requires an OpenSpec proposal, however small it looks.
 - First write a test that reproduces the bug and watch it fail.
 - No OpenSpec proposal is needed, unless the fix changes the expected behaviour, touches a
   sensitive area or changes a contract between services.
+- Create the branch from the ecosystem root, in the affected repos:
+  `./bootstrap.sh branch fix/<short-description> <repo>...`. If the fix needs a proposal,
+  give it the id `fix-<short-description>`: `./bootstrap.sh branch fix-<short-description>`
+  then creates `fix/<short-description>` once the proposal is approved.
 
 ## Reviewing someone else's PR
 

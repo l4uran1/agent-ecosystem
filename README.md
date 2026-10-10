@@ -55,7 +55,9 @@ your-ecosystem/                 ← this template
 ## Workflows
 
 - **[New features](docs/workflows/feature.md):** proposal → review → branches in every
-  affected repo → implementation with TDD → verification → one PR per repo → archive.
+  affected repo → implementation with TDD → verification → one PR per repo → archive. A
+  change dropped after approval is [abandoned](docs/workflows/feature.md#abandoning-a-change),
+  not archived.
 - **[Bug fixes](docs/workflows/bugfix.md):** root cause first, a test that reproduces the
   bug, a minimal fix. A proposal only when the fix changes behaviour, touches a sensitive
   area or changes a contract between services.
@@ -86,6 +88,7 @@ answers with the ecosystem rules, everything is wired up.
 | `./bootstrap.sh --all` | Same, including optional repos |
 | `./bootstrap.sh status` | Branch and state of every repo |
 | `./bootstrap.sh branch <branch> <repo>...` | Creates the branch from the main branch (or switches to it) in several repos |
+| `./bootstrap.sh branch <id>` | Same, with `feature/<id>` in the repos tagged in the change's `tasks.md`. Only if its proposal is merged |
 | `./bootstrap.sh check-approved <id>` | Succeeds only if the proposal `<id>` is merged into the ecosystem main branch |
 | `./bootstrap.sh doctor` | Checks the ecosystem repo is filled in and set up: placeholders, TODOs, OpenSpec, system map age, files left out |
 | `./bootstrap.sh tests` | Runs the tests of `bootstrap.sh`, and shellcheck if installed |
