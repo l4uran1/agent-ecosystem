@@ -101,6 +101,22 @@ For each service repo:
   (GitHub) or `.gitlab/merge_request_templates/Default.md` (GitLab). GitLab Premium can
   define it once at group level instead.
 
+### Optional: a Makefile
+
+If your team prefers `make`, copy `templates/Makefile` to the root. It adds short names for
+`bootstrap.sh` (`make sync`, `make branch ID=<id>`, `make doctor`...) and
+`make <repo>/<target>`, which runs any target of any repo's Makefile from the root, e.g.
+`make api/test`.
+
+```bash
+cp templates/Makefile Makefile
+make help
+```
+
+If one repo starts the development environment of the whole system (for example, its docker
+compose file starts every service), set `ENV_REPO` to that repo in the Makefile. `make up`,
+`make logs`... then run there from the root. `ENV_TARGETS` lists which targets are delegated.
+
 ## 7. Test it
 
 Start your agent from the ecosystem root and create a throwaway proposal:

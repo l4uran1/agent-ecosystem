@@ -14,7 +14,7 @@
 #                             exit 0 only if the proposal ID is merged into the ecosystem main branch
 #   ./bootstrap.sh doctor     check the ecosystem repo is filled in and set up (placeholders, TODOs,
 #                             OpenSpec, system map age, files left out by .gitignore)
-#   ./bootstrap.sh tests      run the tests of this script (and shellcheck, if installed)
+#   ./bootstrap.sh tests      run every suite in tests/ (and shellcheck, if installed)
 #
 # Safe to run as often as you like: it never deletes anything, never switches your
 # branch and never touches your files. If a repo is on another branch, its main
@@ -348,12 +348,16 @@ cmd_doctor() {
   [[ $errors -eq 0 ]]
 }
 
-# Runs the tests of this script, then shellcheck if it is installed.
+# Runs every suite in tests/, even after a failure, then shellcheck if it is installed.
+# Returns the code of the first suite that failed.
 cmd_tests() {
-  local code=0
-  "$ROOT/tests/bootstrap.test.sh" || code=$?
+  local code=0 suite status
+  for suite in "$ROOT"/tests/*.test.sh; do
+    status=0; "$suite" || status=$?
+    [[ $code -ne 0 ]] || code=$status
+  done
   if command -v shellcheck > /dev/null; then
-    shellcheck "$ROOT/bootstrap.sh" "$ROOT/tests/bootstrap.test.sh" || { [[ $code -ne 0 ]] || code=1; }
+    shellcheck "$ROOT/bootstrap.sh" "$ROOT"/tests/*.test.sh || { [[ $code -ne 0 ]] || code=1; }
   else
     echo "   shellcheck is not installed: lint skipped"
   fi
