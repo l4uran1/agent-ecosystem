@@ -95,6 +95,89 @@ rm -rf "$eco/../remote-api"
 check "branch: exits non-zero when the remote cannot be fetched" 1 \
   bash -c "cd '$eco' && ./bootstrap.sh branch feature/x api web"
 
+# --- branch <change-id> ---------------------------------------------------
+
+# An ecosystem repo with two cloned repos (api, web) whose remote main branch holds the
+# approved change add-dark-mode, with a task tagged (api) only. Prints its folder.
+setup_change() {
+  local eco remote
+  eco="$(setup "$1")"; remote="$TMP/$1/remote-eco"
+  git init -q -b main "$remote"
+  mkdir -p "$remote/openspec/changes/add-dark-mode"
+  echo proposal > "$remote/openspec/changes/add-dark-mode/proposal.md"
+  printf '## 1. API\n\n- [ ] 1.1 (api) Add the endpoint\n- [x] 1.2 (api) Run tests, lint and build\n' \
+    > "$remote/openspec/changes/add-dark-mode/tasks.md"
+  git -C "$remote" add . && git -C "$remote" commit -q -m proposal
+  git -C "$eco" init -q -b main
+  git -C "$eco" remote add origin "$remote"
+  git -C "$eco" fetch -q origin && git -C "$eco" reset -q --hard origin/main
+  echo "$eco"
+}
+
+# add_change <eco> <id> <tasks.md content> [archive]: merges a change into the remote main
+# branch, under archive/ if the fourth argument is given.
+add_change() {
+  local remote="$1/../remote-eco" dir="openspec/changes/$2"
+  [[ -n "${4:-}" ]] && dir="openspec/changes/archive/2026-01-15-$2"
+  mkdir -p "$remote/$dir"
+  echo proposal > "$remote/$dir/proposal.md"
+  printf '%s\n' "$3" > "$remote/$dir/tasks.md"
+  git -C "$remote" add . && git -C "$remote" commit -q -m "$2"
+}
+
+has_branch() { git -C "$1" show-ref --verify --quiet "refs/heads/$2"; }
+
+eco="$(setup_change change-ok)"
+check_output "branch <id>: exits 0 and names the repos of an approved change" 0 "api" \
+  bash -c "cd '$eco' && ./bootstrap.sh branch add-dark-mode"
+check "branch <id>: creates feature/<id> in the repos tagged in tasks.md" 0 \
+  has_branch "$eco/api" feature/add-dark-mode
+check "branch <id>: leaves the repos that are not tagged alone" 1 \
+  has_branch "$eco/web" feature/add-dark-mode
+
+eco="$(setup_change change-not-approved)"
+mkdir -p "$eco/openspec/changes/local-only"
+echo draft > "$eco/openspec/changes/local-only/proposal.md"
+printf -- '- [ ] 1.1 (api) Something\n' > "$eco/openspec/changes/local-only/tasks.md"
+check_output "branch <id>: exits 1 when the proposal is not merged" 1 "not approved" \
+  bash -c "cd '$eco' && ./bootstrap.sh branch local-only"
+check "branch <id>: creates no branch when the proposal is not merged" 1 \
+  has_branch "$eco/api" feature/local-only
+
+eco="$(setup_change change-remote-tasks)"
+printf -- '- [ ] 1.1 (api) Add the endpoint\n- [ ] 1.2 (web) Added locally\n' \
+  > "$eco/openspec/changes/add-dark-mode/tasks.md"
+(cd "$eco" && ./bootstrap.sh branch add-dark-mode > /dev/null 2>&1)
+check "branch <id>: reads the repos from the approved tasks.md, not the local copy" 1 \
+  has_branch "$eco/web" feature/add-dark-mode
+
+eco="$(setup_change change-unknown-repo)"
+add_change "$eco" add-ghost "$(printf -- '- [ ] 1.1 (api) One\n- [ ] 2.1 (ghost) Two')"
+check_output "branch <id>: exits 1 when tasks.md names a repo not in repos.txt" 1 "repos.txt.*ghost" \
+  bash -c "cd '$eco' && ./bootstrap.sh branch add-ghost"
+check "branch <id>: creates no branch when a repo is unknown" 1 \
+  has_branch "$eco/api" feature/add-ghost
+
+eco="$(setup_change change-no-tags)"
+add_change "$eco" no-tags "- [ ] 1.1 Add the endpoint"
+check_output "branch <id>: exits 1 when no task names its repo" 1 "\(repo\)" \
+  bash -c "cd '$eco' && ./bootstrap.sh branch no-tags"
+
+eco="$(setup_change change-archived)"
+add_change "$eco" old-change "- [x] 1.1 (api) Done" archive
+check_output "branch <id>: exits 1 when the change is already archived" 1 "archived" \
+  bash -c "cd '$eco' && ./bootstrap.sh branch old-change"
+
+eco="$(setup_change change-fix)"
+add_change "$eco" fix-login-loop "- [ ] 1.1 (web) Reproduce the loop"
+(cd "$eco" && ./bootstrap.sh branch fix-login-loop > /dev/null 2>&1)
+check "branch <id>: a fix- change gets fix/<rest> instead of feature/<id>" 0 \
+  has_branch "$eco/web" fix/login-loop
+
+eco="$(setup branch-no-repos)"
+check_output "branch: exits 1 without repos and without a change id" 1 "repos" \
+  bash -c "cd '$eco' && ./bootstrap.sh branch feature/x"
+
 # --- sync -----------------------------------------------------------------
 
 eco="$(setup sync-background)"

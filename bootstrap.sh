@@ -6,7 +6,10 @@
 #   ./bootstrap.sh --all      also include the "optional" repos
 #   ./bootstrap.sh status     show the branch and state of each repo
 #   ./bootstrap.sh branch X   create (from the main branch) or switch to branch X in the given repos:
-#                             ./bootstrap.sh branch feature/add-dark-mode api web
+#                             ./bootstrap.sh branch fix/login-loop api web
+#   ./bootstrap.sh branch ID  with the id of an approved OpenSpec change and no repos: create
+#                             feature/ID (fix/<rest> for a fix-<rest> id) in the repos tagged
+#                             in its approved tasks.md, only if its proposal is merged
 #   ./bootstrap.sh check-approved ID
 #                             exit 0 only if the proposal ID is merged into the ecosystem main branch
 #   ./bootstrap.sh doctor     check the ecosystem repo is filled in and set up (placeholders, TODOs,
@@ -135,7 +138,18 @@ cmd_status() {
 
 cmd_branch() {
   local name="${1:?Give the branch name}"; shift
-  [[ $# -gt 0 ]] || { echo "Give the affected repos, e.g.: branch $name api web"; exit 1; }
+
+  # Without repos, <name> is the id of an approved change: its repos come from its tasks.
+  if [[ $# -eq 0 ]]; then
+    [[ "$name" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] \
+      || { echo "Give the affected repos, e.g.: branch $name api web, or the id of an approved change"; exit 1; }
+    local repos
+    repos="$(change_repos "$name")" || exit 1
+    # shellcheck disable=SC2086 # repo names have no spaces
+    set -- $repos
+    if [[ "$name" == fix-* ]]; then name="fix/${name#fix-}"; else name="feature/$name"; fi
+    echo "   repos of the change: $*"
+  fi
 
   # Keeps going after a failure so the other repos still get the branch, but exits
   # non-zero if any repo failed: callers (people or agents) must not miss it.
@@ -193,6 +207,37 @@ cmd_check_approved() {
   fi
   echo "!! $id: not approved. openspec/changes/$id/proposal.md is not on $main yet: its PR must be merged first."
   return 1
+}
+
+# Prints the repos of the "(repo)" tags in the tasks of an approved change, once each.
+# Tasks are read from the remote main branch, not the local copy: that is what was
+# approved. Fails before anything is created if the change is not approved, is already
+# archived, has no tags, or names a repo that is not in repos.txt.
+change_repos() {
+  local id="$1" main dir="openspec/changes/$1" approval tasks repos known repo unknown=""
+  approval="$(cmd_check_approved "$id")" || { echo "$approval" >&2; return 1; }
+
+  main="$(ecosystem_branch)"
+  if ! tasks="$(git show "origin/$main:$dir/tasks.md" 2>/dev/null)"; then
+    if ! git cat-file -e "origin/$main:$dir/proposal.md" 2>/dev/null; then
+      echo "!! $id is already archived: the change is finished, open a new proposal to change it again" >&2
+    else
+      echo "!! $dir/tasks.md is not on $main" >&2
+    fi
+    return 1
+  fi
+
+  repos="$(sed -nE 's/^[[:space:]]*- \[[ xX]\] [0-9.]+ \(([A-Za-z0-9._-]+)\).*/\1/p' <<< "$tasks" | sort -u)"
+  [[ -n "$repos" ]] \
+    || { echo "!! $dir/tasks.md has no task tagged with its repo, e.g.: - [ ] 1.1 (repo) ..." >&2; return 1; }
+
+  known="$(read_repos | awk '{print $1}')"
+  for repo in $repos; do
+    grep -qxF "$repo" <<< "$known" || unknown="$unknown $repo"
+  done
+  [[ -z "$unknown" ]] || { echo "!! $dir/tasks.md names repos that are not in repos.txt:$unknown" >&2; return 1; }
+
+  echo "$repos"
 }
 
 # Files a team fills in when adopting the template.

@@ -169,7 +169,8 @@ Be concise: the proposal must be reviewable in 10 minutes.
 
 Then follow the [feature workflow](feature.md) from step 3: proposal review and merge,
 branches, `/opsx:apply`, `/opsx:verify`, one PR per repo and archive. The branch keeps the
-`fix/<short-description>` name.
+`fix/<short-description>` name: once the proposal is merged,
+`./bootstrap.sh branch fix-<short-description>` creates it in the repos tagged in its tasks.
 
 **If the bug is in production and urgent,** do not wait for the proposal to contain the
 damage. First apply the smallest mitigation that stops it (turn the feature off, revert the

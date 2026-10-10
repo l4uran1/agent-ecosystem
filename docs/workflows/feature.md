@@ -19,7 +19,8 @@ Conventions in this guide:
 1. [Phase 1 · Define what gets built](#phase-1--define-what-gets-built)
 2. [Phase 2 · Build it right](#phase-2--build-it-right)
 3. [Phase 3 · Close](#phase-3--close)
-4. [Summary](#summary)
+4. [Abandoning a change](#abandoning-a-change)
+5. [Summary](#summary)
 
 ## Phase 1 · Define what gets built
 
@@ -49,7 +50,8 @@ Out of scope: <list>.
 List the ecosystem repos it affects. If it touches contracts between services
 (queues, channels, internal endpoints, shared tables), check docs/system-map.md
 and describe them in the proposal.
-In tasks.md, say which repo each task is done in and which test it starts with.
+In tasks.md, tag each task with its repo, e.g. "- [ ] 1.1 (api) ...", and say
+which test it starts with.
 Be concise: the proposal must be reviewable in 10 minutes.
 ```
 
@@ -65,8 +67,8 @@ reviewer sees the impact before any code exists.
 
 Someone who knows that part of the product reviews and merges the proposal's PR. Reviewing
 two pages of spec is much cheaper than reviewing a thousand lines of wrong code. The agent
-will not implement until the proposal is on the main branch: it checks with
-`./bootstrap.sh check-approved <id>`, which anyone can also run.
+will not implement until the proposal is on the main branch: step 4 refuses to create the
+branches before that, and anyone can check it with `./bootstrap.sh check-approved <id>`.
 
 **The PR description is the review.** OpenSpec writes several files, and not all of them are
 for people. When `/opsx:propose` finishes, the agent offers to open the PR and writes its
@@ -117,12 +119,23 @@ The phase turns the approved tasks into tested code, without leaving the proposa
 
 ### Step 4 · Create the branches
 
-Create the same branch in every affected repo. The script starts it from the latest main
-branch on the remote, even if the repo is on another branch.
+Create `feature/<id>` in every affected repo. The script checks that the proposal is merged
+and takes the repos from the `(repo)` tags of the approved `tasks.md`, so nobody has to list
+them by hand. It starts each branch from the latest main branch on the remote, even if the
+repo is on another branch.
 
 ```bash
-./bootstrap.sh branch feature/<id> <repo> <repo>...
+./bootstrap.sh branch <id>
+#    repos of the change: api web
+# -> api: created feature/<id> from main
+# -> web: created feature/<id> from main
 ./bootstrap.sh status
+```
+
+Before the proposal is merged it creates nothing:
+
+```text
+!! <id>: not approved. openspec/changes/<id>/proposal.md is not on main yet: its PR must be merged first.
 ```
 
 ### Step 5 · Refine the plan
@@ -145,13 +158,30 @@ Follow the TDD rules in AGENTS.md: first a failing test, check that it fails for
 right reason, then the minimal implementation and the refactor.
 Commit each change in the repo the task belongs to, on branch feature/<id>.
 Never mix several repos in one commit.
-Tick each task in tasks.md when it is done.
+Tick each task in tasks.md when it is done, and commit and push the progress on the
+ecosystem branch spec/<id>-progress, without opening a PR.
 If you find that the expected behaviour must change, stop and tell me.
 ```
 
 For more control, ask it to implement a single task and stop so you can review it before
-the next one. If the expected behaviour changes along the way, update the proposal first:
-`/opsx:update <id> — <what changed and why>`.
+the next one.
+
+**Progress is not reviewed.** The ticks and work notes in `tasks.md` go on the ecosystem
+branch `spec/<id>-progress`, created once from the latest main branch and pushed so the
+team can follow it, but with no PR: they reach the main branch with the archive (step 9).
+
+```bash
+git switch <main> && git pull --ff-only
+git switch -c spec/<id>-progress      # only the first time
+git add openspec/changes/<id>/tasks.md
+git commit -m "spec: progress <id>"
+git push -u origin spec/<id>-progress
+```
+
+**A behaviour change is reviewed.** If the expected behaviour changes along the way, stop
+the affected part and update the proposal first: `/opsx:update <id> — <what changed and why>`.
+That update goes in its own ecosystem PR (`spec: update <id>`), separate from the progress,
+and the affected tasks wait until it is merged.
 
 ### Step 7 · Verify
 
@@ -193,16 +223,18 @@ cd ..
 
 When the last code PR of the change is merged, archive the spec in the ecosystem repo with a
 small PR. Until then, the proposal stays in `openspec/changes/` and everyone can see the
-change is in progress.
+change is in progress. The archive is done on the progress branch, so the same PR carries
+the final progress and the move to `archive/`.
 
 ```bash
-git switch <main> && git pull --ff-only
-git switch -c spec/archive-<id>
+git switch spec/<id>-progress
+git pull --ff-only && git merge origin/<main>
 # run /opsx:archive <id> in the agent's chat
 git add openspec/
 git commit -m "spec: archive <id>"
-git push -u origin spec/archive-<id>
+git push
 gh pr create --base <main> --title "spec: archive <id>"
+# GitLab: glab mr create --target-branch <main> --title "spec: archive <id>"
 ```
 
 ### Step 10 · Merge and clean up
@@ -212,8 +244,25 @@ Merge each PR from your git host once CI is green. Then clean up locally:
 ```bash
 git -C <repo> switch <main>
 git -C <repo> branch -d feature/<id>
+git branch -d spec/<id>-progress
 ./bootstrap.sh          # brings every main branch up to date
 ```
+
+## Abandoning a change
+
+If the team drops a change that was already approved, its proposal leaves the ecosystem
+repo. Do not use `/opsx:archive`: it would merge into `openspec/specs/` behaviour that was
+never built.
+
+| # | Step | Command |
+| --- | --- | --- |
+| 1 | Delete the proposal in an ecosystem PR, with the reason in its description. Revert what it added to `docs/system-map.md`, if anything | `git switch -c spec/<id>-abandon origin/<main> && git rm -r openspec/changes/<id>` |
+| 2 | Close the change's open code PRs without merging; revert the ones already merged, following the proposal's rollback plan | Git host |
+| 3 | Once the PRs are closed, delete `feature/<id>` and `spec/<id>-progress`, locally and on the remote | `git push origin --delete <branch>` |
+
+The revert PRs need no new proposal: they go back to the behaviour already in
+`openspec/specs/`. Anyone who wants to keep the abandoned work saves it locally before the
+branches are deleted.
 
 ## Summary
 
@@ -224,8 +273,8 @@ skipped in a rush, let it be the detailed plan review, never the proposal.
 | --- | --- | --- | --- | --- |
 | Explore | `/opsx:explore` | Chat | Conclusions for the proposal | No |
 | Proposal | `/opsx:propose` | Ecosystem repo | Proposal, specs, tasks with their tests, updated map | **Yes, mandatory** |
-| Branches | `bootstrap.sh branch` | Affected repos | Same branch everywhere | No |
+| Branches | `bootstrap.sh branch <id>` | Affected repos | Same branch everywhere, only if approved | No |
 | Plan | `tasks.md` refined by the agent | Chat | Files and first test per task | Quick |
-| Implementation | `/opsx:apply` + TDD rules | Affected repos | Tested code | No |
+| Implementation | `/opsx:apply` + TDD rules | Affected repos | Tested code; progress on `spec/<id>-progress` | No (behaviour changes: **yes**) |
 | Verification and review | `/opsx:verify` + team | Affected repos | One PR per repo, linked to the proposal | **Yes** |
-| Archive | `/opsx:archive` | Ecosystem repo | Specs updated on the main branch | Small ecosystem PR |
+| Archive | `/opsx:archive` | Ecosystem repo, on `spec/<id>-progress` | Specs updated on the main branch | Small ecosystem PR |
