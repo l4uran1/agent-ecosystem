@@ -206,6 +206,10 @@ printf '#!/usr/bin/env bash\necho fake suite ran\nexit 3\n' > "$eco/tests/bootst
 chmod +x "$eco/tests/bootstrap.test.sh"
 check_output "tests: runs the test suite and returns its exit code" 3 "fake suite ran" \
   bash -c "cd '$eco' && ./bootstrap.sh tests"
+printf '#!/usr/bin/env bash\necho second suite ran\n' > "$eco/tests/makefile.test.sh"
+chmod +x "$eco/tests/makefile.test.sh"
+check_output "tests: runs every tests/*.test.sh and fails if any fails" 3 "second suite ran" \
+  bash -c "cd '$eco' && ./bootstrap.sh tests"
 
 # --- check-approved -------------------------------------------------------
 

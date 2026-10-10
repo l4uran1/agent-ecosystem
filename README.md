@@ -45,8 +45,8 @@ your-ecosystem/                 ← this template
 │   ├── product/                ← sensitive areas, constraints, glossary, decisions
 │   └── workflows/              ← step-by-step guides: features and bug fixes
 ├── openspec/                   ← specs and changes for the whole system
-├── templates/                  ← proposal PR description; AGENTS.md, CLAUDE.md and PR template per service repo
-├── tests/                      ← tests for bootstrap.sh: tests/bootstrap.test.sh
+├── templates/                  ← proposal PR description; per-repo AGENTS.md, CLAUDE.md, PR template; optional Makefile
+├── tests/                      ← tests for bootstrap.sh and the optional Makefile
 ├── api/                        ← service repos: own git, ignored by the ecosystem repo
 ├── web/
 └── worker/
@@ -61,6 +61,74 @@ your-ecosystem/                 ← this template
 - **[Bug fixes](docs/workflows/bugfix.md):** root cause first, a test that reproduces the
   bug, a minimal fix. A proposal only when the fix changes behaviour, touches a sensitive
   area or changes a contract between services.
+
+### At a glance
+
+The full rules are in `AGENTS.md`. `/opsx:*` commands run in the agent's chat, from the
+ecosystem root; everything else runs in the terminal. Commands are shown for GitHub; on
+GitLab use `glab mr create --target-branch <main>`.
+
+**New feature**
+
+| # | Step | Command |
+| --- | --- | --- |
+| 1 | (Optional) Explore the idea before proposing | `/opsx:explore` |
+| 2 | Create the proposal (proposal, design, specs and tasks) | `/opsx:propose <description>` |
+| 3 | Open the proposal's PR: the agent offers it when step 2 ends | `gh pr create --base <main> --title "spec: <id>"` |
+| 4 | Review and merge the proposal's PR: a person does it | Git host |
+| 5 | Create `feature/<id>` in the affected repos. Creates nothing until the proposal is merged | `./bootstrap.sh branch <id>` |
+| 6 | Implement task by task, with TDD. Progress in `tasks.md` goes on `spec/<id>-progress`, pushed, no PR | `/opsx:apply <id>` |
+| 7 | If the expected behaviour changes: update the proposal and open a PR to review it | `/opsx:update <id>` |
+| 8 | (Optional) Check the implementation meets the proposal | `/opsx:verify <id>` |
+| 9 | Open one PR per repo, with `<id>` in the title | `gh pr create --base <main>` |
+| 10 | Once the last code PR is merged: archive on `spec/<id>-progress` and open its PR | `/opsx:archive <id>` |
+
+**Bug fix** (no proposal, unless it changes expected behaviour, touches a sensitive area or changes a contract)
+
+| # | Step | Command |
+| --- | --- | --- |
+| 1 | Create the branch in the affected repos | `./bootstrap.sh branch fix/<short-description> <repo>...` |
+| 2 | Reproduce, find the root cause and write the failing test | — |
+| 3 | Fix and open one PR per repo | `gh pr create --base <main>` |
+
+**Abandoning an approved change**
+
+| # | Step | Command |
+| --- | --- | --- |
+| 1 | Delete the proposal in an ecosystem PR, with the reason in its description | `git switch -c spec/<id>-abandon origin/<main> && git rm -r openspec/changes/<id>` |
+| 2 | Close the open code PRs and revert the ones already merged | Git host |
+| 3 | Delete `feature/<id>` and `spec/<id>-progress` | `git push origin --delete <branch>` |
+
+### Example: export orders to CSV
+
+A feature that touches `api` (an export endpoint) and `web` (a button).
+
+```bash
+# In the agent: the proposal, with id export-orders-csv
+/opsx:propose Let users export their order list to CSV from the web app
+# The agent offers to open the PR "spec: export-orders-csv". A person reviews and merges it.
+
+# In the terminal: create the branches. Before the proposal's PR is merged, it refuses:
+./bootstrap.sh branch export-orders-csv
+# !! export-orders-csv: not approved. openspec/changes/export-orders-csv/proposal.md is not on main yet: its PR must be merged first.
+
+# Once merged:
+./bootstrap.sh branch export-orders-csv
+#    repos of the change: api web
+# -> api: created feature/export-orders-csv from main
+# -> web: created feature/export-orders-csv from main
+
+# In the agent: implement. Ticked tasks are pushed to spec/export-orders-csv-progress
+/opsx:apply export-orders-csv
+
+# One PR per repo, with the id in the title:
+#   api: "export-orders-csv: CSV export endpoint"
+#   web: "export-orders-csv: Export to CSV button"
+
+# Once both code PRs are merged, in the agent:
+/opsx:archive export-orders-csv
+# The agent opens the archive PR. Once merged, the spec lives in openspec/specs/.
+```
 
 ## Getting started
 
@@ -91,7 +159,11 @@ answers with the ecosystem rules, everything is wired up.
 | `./bootstrap.sh branch <id>` | Same, with `feature/<id>` in the repos tagged in the change's `tasks.md`. Only if its proposal is merged |
 | `./bootstrap.sh check-approved <id>` | Succeeds only if the proposal `<id>` is merged into the ecosystem main branch |
 | `./bootstrap.sh doctor` | Checks the ecosystem repo is filled in and set up: placeholders, TODOs, OpenSpec, system map age, files left out |
-| `./bootstrap.sh tests` | Runs the tests of `bootstrap.sh`, and shellcheck if installed |
+| `./bootstrap.sh tests` | Runs the tests of `bootstrap.sh` and the optional Makefile, and shellcheck if installed |
+
+Prefer `make`? Copy `templates/Makefile` to the root (see [SETUP.md](SETUP.md)): it adds
+`make sync`, `make branch ID=<id>`, `make doctor`... and `make <repo>/<target>` to run any
+repo's Makefile target from the root.
 
 The script never deletes anything, never switches your branch and never touches your files:
 
