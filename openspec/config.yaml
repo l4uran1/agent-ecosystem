@@ -34,3 +34,19 @@ rules:
     - Tag each task with the repo it is done in, right after its number, e.g. "- [ ] 1.1 (<repo>) ..."; bootstrap.sh reads these tags to create the branches
     - Every task starts with the test that must fail before implementing
     - The last task of each repo is running its tests, lint and build
+
+# Extra instructions for a workflow step. They live here, not in the generated skills, so
+# `openspec update` does not overwrite them. Add your own steps next to archive.
+operations:
+  archive:
+    guidance:
+      - >-
+        After moving the change to archive/, check that docs/system-map.md is still right:
+        compare the contracts between services (queues, pub/sub channels, internal
+        endpoints, shared tables, shared credentials) that the change creates, modifies or
+        removes, according to its proposal.md, its specs and the merged code, with what the
+        map says on the main branch. If nothing needs to change, say so in the summary. If
+        it does, update it on the same spec/<id> branch, in a commit separate from the
+        archive, add it to the "Changes during implementation" section of the proposal's PR
+        description, and warn, with the link to that PR, that the map changed and needs
+        review.

@@ -14,7 +14,7 @@ ENV_TARGETS := up stop restart ps logs
 
 REPO_DIRS := $(shell grep -vE '^[[:space:]]*(\#|$$)' repos.txt | awk '{print $$1}')
 
-.PHONY: help sync sync-all status branch check-approved doctor tests FORCE
+.PHONY: help sync sync-all status branch check-spec doctor tests FORCE
 
 help: ## list of commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -42,9 +42,9 @@ branch: ## ID=<change-id>, or NAME=<branch> REPOS="<repo> ..."
 		exit 1; \
 	fi
 
-check-approved: ## ID=<change-id>: check its proposal is merged
-	@if [ -z "$(ID)" ]; then echo 'Usage: make check-approved ID=<change-id>'; exit 1; fi
-	@./bootstrap.sh check-approved "$(ID)"
+check-spec: ## ID=<change-id>: is its proposal published, merged or archived?
+	@if [ -z "$(ID)" ]; then echo 'Usage: make check-spec ID=<change-id>'; exit 1; fi
+	@./bootstrap.sh check-spec "$(ID)"
 
 doctor: ## check the ecosystem repo is filled in and set up
 	@./bootstrap.sh doctor

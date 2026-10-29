@@ -24,6 +24,9 @@ ignores them. A change is a single OpenSpec proposal even when it spans several 
 
 ## Consequences
 - The spec and the code are reviewed in different PRs: the proposal in the ecosystem repo and
-  the code in each repo. The spec is archived when the last code PR is merged.
+  the code in each repo. The proposal's PR is opened before building and stays open until
+  the last code PR is merged; then it carries the archive and is merged. The main branch only
+  gets what was built, at the cost of code being merged before the spec is reviewed, except
+  for sensitive areas and contracts, whose proposal is reviewed before building.
 - The whole team must use the same folder layout (`bootstrap.sh`).
 - The agent must be started from the ecosystem root to read the shared rules.

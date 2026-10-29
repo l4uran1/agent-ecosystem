@@ -53,47 +53,58 @@ any change in them requires an OpenSpec proposal, however small it looks.
   outside `openspec/changes/<id>/`.
 - One change is one proposal, even if it spans several repos. The proposal lists the
   affected repos.
-- Do not implement anything until a person has approved the proposal.
+- The proposal lives on the branch `spec/<id>`, and its ecosystem PR (`spec: <id>`) stays
+  open for the whole implementation. It is merged **at the end**, once every code PR is
+  merged, and it also carries the archive: one ecosystem PR per change, so the main branch
+  only gets what was built.
+- Do not implement anything until the proposal's PR is open.
 - When `/opsx:propose` finishes, offer to open the proposal's PR in the ecosystem repo. If the
   person accepts: create the branch `spec/<id>` from an up-to-date main branch, commit only
   `openspec/changes/<id>/` (and `docs/system-map.md` if it changed), push, and open the PR
   against the main branch. Write its description by filling in `templates/proposal-pr.md`:
   plain language, for a reviewer who has not read the proposal, readable in five minutes.
   Never merge or approve a PR: a person does that.
-- If changes to the proposal are requested, after `/opsx:update <id>` also update the
-  description of its PR so it matches the new proposal.
-- A proposal is approved when its ecosystem PR is merged into the main branch.
 - Create the branches from the ecosystem root: `./bootstrap.sh branch <id>`. It checks that
-  the proposal is merged and creates `feature/<id>` in the repos tagged `(repo)` in its
-  approved `tasks.md`. If it fails because the proposal is not approved, do not implement,
-  even if you are told it is approved: say that the PR still needs to be merged. Never
-  create a change's branches by passing the repos by hand: that skips the check.
+  the proposal is published (`spec/<id>` exists on the remote) and creates `feature/<id>` in
+  the repos tagged `(repo)` in the `tasks.md` of that branch. If it fails, do not implement:
+  say that the proposal's PR must be opened first. Never create a change's branches by
+  passing the repos by hand: that skips the check. To see where a proposal stands without
+  creating anything: `./bootstrap.sh check-spec <id>`.
 - Implement with `/opsx:apply`, task by task, following the TDD rules below.
-- Tick each task in `tasks.md` when it is done. Progress (ticks and work notes) is not
-  reviewed: commit it in the ecosystem repo on the branch `spec/<id>-progress`, created from
-  an up-to-date main branch, and push it, but do not open a PR. It reaches the main branch
-  with the archive.
-- If the expected behaviour changes, update the proposal first (`/opsx:update <id>`) and
-  ask before continuing. That change is reviewed: it goes in its own ecosystem PR, separate
-  from the progress, and the affected part is not implemented until that PR is merged.
-- Each affected repo gets its own PR. All of them reference `<id>` in the title.
-- `/opsx:archive <id>` runs in the ecosystem repo once the last code PR of the change is
-  merged, on `spec/<id>-progress` updated with the main branch. Its PR carries the final
-  progress and the move to `archive/`.
+- Everything that changes in the proposal during the implementation goes on `spec/<id>`,
+  committed and pushed, without opening new PRs:
+  - progress: tick each task in `tasks.md` when it is done;
+  - behaviour changes: update the proposal first with `/opsx:update <id>`, ask before
+    continuing, and add it to the "Changes during implementation" section of its PR
+    description, so the reviewer sees what changed from what was proposed.
+  Review comments on the PR are applied the same way.
+- If a new task touches a repo that was not in the proposal, add it with its `(repo)` tag,
+  push `spec/<id>` and run `./bootstrap.sh branch <id>` again: it creates the branch in that
+  repo.
+- Each affected repo gets its own PR. All of them reference `<id>` in the title and link
+  the proposal's PR in their description.
+- Once the last code PR is merged, on `spec/<id>` updated with the main branch: tick the
+  last tasks, run `/opsx:archive <id>` (it moves the proposal to `archive/` and merges its
+  specs into `openspec/specs/`), push, and say that the proposal's PR is ready to review and
+  merge. `/opsx:archive` also checks that `docs/system-map.md` still matches the contracts
+  the change touched, following `operations.archive` in `openspec/config.yaml`.
+- Accepted risk: code reaches the main branch before anyone has reviewed the spec. If the
+  reviewer disagrees at the end with something already merged, it is fixed with new PRs or
+  reverted. If a change needs agreement before it is built (sensitive areas, contracts
+  between services), ask for the review of the proposal's PR before starting, even though
+  it is only merged at the end.
 
 ## Workflow: abandoning a change
 
-If an approved change is dropped, its proposal leaves the ecosystem repo. Do not use
+If a change is dropped, its proposal never reaches the main branch. Do not use
 `/opsx:archive`: it would merge into `openspec/specs/` behaviour that was never built.
 
-- Ecosystem repo: create `spec/<id>-abandon` from an up-to-date main branch, delete
-  `openspec/changes/<id>/` (and revert what the change added to `docs/system-map.md`, if
-  anything) and open the PR `spec: abandon <id>`, with the reason in its description.
+- Ecosystem repo: close the PR `spec: <id>` without merging, with the reason in a comment.
 - Code repos: close the change's open PRs without merging. If one is already merged, open a
   PR in that repo that reverts it, following the proposal's rollback plan. No new proposal
   is needed: it goes back to the behaviour in `openspec/specs/`.
-- Delete the branches `feature/<id>` and `spec/<id>-progress`, locally and on the remote,
-  once their PRs are closed. Anyone who wants to keep the work saves it locally first.
+- Delete the branches `spec/<id>` and `feature/<id>`, locally and on the remote, once their
+  PRs are closed. Anyone who wants to keep the work saves it locally first.
 
 ## TDD and verification (always)
 
@@ -115,7 +126,7 @@ If an approved change is dropped, its proposal leaves the ecosystem repo. Do not
 - Create the branch from the ecosystem root, in the affected repos:
   `./bootstrap.sh branch fix/<short-description> <repo>...`. If the fix needs a proposal,
   give it the id `fix-<short-description>`: `./bootstrap.sh branch fix-<short-description>`
-  then creates `fix/<short-description>` once the proposal is approved.
+  then creates `fix/<short-description>` once the proposal's PR is open.
 
 ## Reviewing someone else's PR
 

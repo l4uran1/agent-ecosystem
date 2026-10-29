@@ -7,11 +7,12 @@
 #   ./bootstrap.sh status     show the branch and state of each repo
 #   ./bootstrap.sh branch X   create (from the main branch) or switch to branch X in the given repos:
 #                             ./bootstrap.sh branch fix/login-loop api web
-#   ./bootstrap.sh branch ID  with the id of an approved OpenSpec change and no repos: create
+#   ./bootstrap.sh branch ID  with the id of a published OpenSpec change and no repos: create
 #                             feature/ID (fix/<rest> for a fix-<rest> id) in the repos tagged
-#                             in its approved tasks.md, only if its proposal is merged
-#   ./bootstrap.sh check-approved ID
-#                             exit 0 only if the proposal ID is merged into the ecosystem main branch
+#                             in its published tasks.md, only if its PR (spec/ID) is open
+#   ./bootstrap.sh check-spec ID
+#                             say whether the proposal ID is published, merged or archived; exit 1
+#                             if it is not on the ecosystem remote
 #   ./bootstrap.sh doctor     check the ecosystem repo is filled in and set up (placeholders, TODOs,
 #                             OpenSpec, system map age, files left out by .gitignore)
 #   ./bootstrap.sh tests      run every suite in tests/ (and shellcheck, if installed)
@@ -139,10 +140,10 @@ cmd_status() {
 cmd_branch() {
   local name="${1:?Give the branch name}"; shift
 
-  # Without repos, <name> is the id of an approved change: its repos come from its tasks.
+  # Without repos, <name> is the id of a published change: its repos come from its tasks.
   if [[ $# -eq 0 ]]; then
-    [[ "$name" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] \
-      || { echo "Give the affected repos, e.g.: branch $name api web, or the id of an approved change"; exit 1; }
+    is_change_id "$name" \
+      || { echo "Give the affected repos, e.g.: branch $name api web, or the id of a published change"; exit 1; }
     local repos
     repos="$(change_repos "$name")" || exit 1
     # shellcheck disable=SC2086 # repo names have no spaces
@@ -187,45 +188,73 @@ ecosystem_branch() {
   if [[ -n "$head" ]]; then echo "${head#origin/}"; else echo "$DEFAULT_BRANCH"; fi
 }
 
-# A proposal is approved when its PR is merged: its proposal.md is on the remote main
-# branch, either still in openspec/changes/ or already archived.
-cmd_check_approved() {
-  local id="${1:-}"
-  [[ "$id" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] \
-    || { echo "Give the change id in kebab-case, e.g.: check-approved add-dark-mode"; return 1; }
+is_change_id() { [[ "$1" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; }
 
-  local main archived
+# Where the proposal <id> is on the ecosystem remote. Prints one of:
+#   "archived"                 the change is finished
+#   "merged origin/<main>"     its PR was merged before the change was built
+#   "published origin/spec/<id>"  its PR is open: spec/<id> exists on the remote. It is
+#                              merged at the end, after the code PRs and with the archive.
+# Returns 1 if the proposal is not on the remote, 2 if the remote cannot be fetched.
+spec_state() {
+  local id="$1" dir="openspec/changes/$1" main branch="spec/$1" archived
   main="$(ecosystem_branch)"
-  git fetch --quiet origin "$main" || { echo "!! could not fetch $main from the remote"; return 1; }
+  git fetch --quiet origin "$main" || { echo "!! could not fetch $main from the remote" >&2; return 2; }
 
-  if git cat-file -e "origin/$main:openspec/changes/$id/proposal.md" 2>/dev/null; then
-    echo "$id: approved (proposal merged into $main)"; return 0
-  fi
   archived="$(git ls-tree -r --name-only "origin/$main" -- openspec/changes/archive/)"
   if grep -qE "^openspec/changes/archive/[0-9]{4}-[0-9]{2}-[0-9]{2}-$id/proposal\.md$" <<< "$archived"; then
-    echo "$id: approved (proposal merged into $main and already archived)"; return 0
+    echo "archived"; return 0
   fi
-  echo "!! $id: not approved. openspec/changes/$id/proposal.md is not on $main yet: its PR must be merged first."
+  if git cat-file -e "origin/$main:$dir/proposal.md" 2>/dev/null; then
+    echo "merged origin/$main"; return 0
+  fi
+  # Asks the remote itself: a stale origin/spec/<id> left by an earlier fetch does not count
+  # once its PR is closed and the branch deleted.
+  if git ls-remote --exit-code origin "refs/heads/$branch" > /dev/null 2>&1 \
+    && git fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch" \
+    && git cat-file -e "origin/$branch:$dir/proposal.md" 2>/dev/null; then
+    echo "published origin/$branch"; return 0
+  fi
   return 1
 }
 
-# Prints the repos of the "(repo)" tags in the tasks of an approved change, once each.
-# Tasks are read from the remote main branch, not the local copy: that is what was
-# approved. Fails before anything is created if the change is not approved, is already
-# archived, has no tags, or names a repo that is not in repos.txt.
-change_repos() {
-  local id="$1" main dir="openspec/changes/$1" approval tasks repos known repo unknown=""
-  approval="$(cmd_check_approved "$id")" || { echo "$approval" >&2; return 1; }
+# A change can be implemented as soon as its proposal is published: its PR is open.
+cmd_check_spec() {
+  local id="${1:-}" state rc=0
+  is_change_id "$id" || { echo "Give the change id in kebab-case, e.g.: check-spec add-dark-mode"; return 1; }
 
-  main="$(ecosystem_branch)"
-  if ! tasks="$(git show "origin/$main:$dir/tasks.md" 2>/dev/null)"; then
-    if ! git cat-file -e "origin/$main:$dir/proposal.md" 2>/dev/null; then
-      echo "!! $id is already archived: the change is finished, open a new proposal to change it again" >&2
-    else
-      echo "!! $dir/tasks.md is not on $main" >&2
-    fi
+  state="$(spec_state "$id")" || rc=$?
+  case "$rc:${state%% *}" in
+    0:published) echo "$id: published (its PR is open on spec/$id): it can be implemented" ;;
+    0:merged)    echo "$id: merged into $(ecosystem_branch) before being built: it can be implemented" ;;
+    0:archived)  echo "$id: archived: the change is finished" ;;
+    2:*)         return 1 ;;
+    *)           echo "!! $id: not published. Push spec/$id with openspec/changes/$id/ and open its PR (spec: $id) before implementing."
+                 return 1 ;;
+  esac
+}
+
+# Prints the repos of the "(repo)" tags in the tasks of a published change, once each.
+# Tasks are read from the remote (spec/<id>, or the main branch if the proposal was merged
+# there), not the local copy: that is what reviewers see. Fails before anything is created
+# if the change is not published, is already archived, has no tags, or names a repo that
+# is not in repos.txt.
+change_repos() {
+  local id="$1" dir="openspec/changes/$1" state rc=0 ref tasks repos known repo unknown=""
+  state="$(spec_state "$id")" || rc=$?
+  case "$rc" in
+    0) ;;
+    2) return 1 ;;
+    *) cmd_check_spec "$id" >&2; return 1 ;;
+  esac
+  if [[ "$state" == archived ]]; then
+    echo "!! $id is already archived: the change is finished, open a new proposal to change it again" >&2
     return 1
   fi
+
+  ref="${state#* }"
+  tasks="$(git show "$ref:$dir/tasks.md" 2>/dev/null)" \
+    || { echo "!! $dir/tasks.md is not on $ref" >&2; return 1; }
 
   repos="$(sed -nE 's/^[[:space:]]*- \[[ xX]\] [0-9.]+ \(([A-Za-z0-9._-]+)\).*/\1/p' <<< "$tasks" | sort -u)"
   [[ -n "$repos" ]] \
@@ -367,7 +396,7 @@ cmd_tests() {
 case "${1:-}" in
   status) cmd_status ;;
   branch) shift; cmd_branch "$@" ;;
-  check-approved) shift; cmd_check_approved "$@" ;;
+  check-spec) shift; cmd_check_spec "$@" ;;
   doctor) cmd_doctor ;;
   tests) cmd_tests ;;
   ""|--all) cmd_sync "${1:-}" ;;
