@@ -50,6 +50,10 @@ openspec config profile     # choose "Workflows only" and add verify; keep deliv
 openspec update
 ```
 
+Workflow instructions of your own go in `operations.<step>.guidance` of
+`openspec/config.yaml` (the template ships one for `archive`), not in the generated skills:
+`openspec update` overwrites the skills and keeps that file.
+
 The profile is stored in your user config, not in the project. The team gets the commands
 because the generated files are committed, but anyone running `openspec update` with the
 default profile could remove `verify`. Only the ecosystem repo owner should run it.
@@ -138,8 +142,9 @@ product context: their content shapes how everyone's agents behave.
 Before rolling it out to the whole team, run a pilot with 3–4 people for a few weeks on real
 features and bugs. Agree beforehand:
 
-- **Who reviews proposals, and how fast** (e.g. same day). A slow review becomes the
-  bottleneck and people start coding without approval.
+- **Who reviews proposals, and how fast.** Proposal PRs are merged at the end, but those
+  touching sensitive areas or contracts are reviewed before building (e.g. same day). A
+  slow review there becomes the bottleneck and people start coding without agreement.
 - **Who owns the ecosystem repo** and can merge changes to it.
 - **What you will measure:** review round-trips, rework after merge, and how much time the
   proposal step adds.

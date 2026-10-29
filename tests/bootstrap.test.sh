@@ -98,7 +98,7 @@ check "branch: exits non-zero when the remote cannot be fetched" 1 \
 # --- branch <change-id> ---------------------------------------------------
 
 # An ecosystem repo with two cloned repos (api, web) whose remote main branch holds the
-# approved change add-dark-mode, with a task tagged (api) only. Prints its folder.
+# change add-dark-mode, with a task tagged (api) only. Prints its folder.
 setup_change() {
   local eco remote
   eco="$(setup "$1")"; remote="$TMP/$1/remote-eco"
@@ -125,30 +125,56 @@ add_change() {
   git -C "$remote" add . && git -C "$remote" commit -q -m "$2"
 }
 
+# publish_change <eco> <id> <tasks.md content>: pushes a proposal to the branch spec/<id> of
+# the remote, as if its PR were open, without merging it.
+publish_change() {
+  local remote="$1/../remote-eco" dir="openspec/changes/$2"
+  git -C "$remote" switch -q -c "spec/$2" main
+  mkdir -p "$remote/$dir"
+  echo proposal > "$remote/$dir/proposal.md"
+  printf '%s\n' "$3" > "$remote/$dir/tasks.md"
+  git -C "$remote" add . && git -C "$remote" commit -q -m "spec: $2"
+  git -C "$remote" switch -q main
+}
+
 has_branch() { git -C "$1" show-ref --verify --quiet "refs/heads/$2"; }
 
 eco="$(setup_change change-ok)"
-check_output "branch <id>: exits 0 and names the repos of an approved change" 0 "api" \
+check_output "branch <id>: exits 0 and names the repos of a change merged into main" 0 "api" \
   bash -c "cd '$eco' && ./bootstrap.sh branch add-dark-mode"
 check "branch <id>: creates feature/<id> in the repos tagged in tasks.md" 0 \
   has_branch "$eco/api" feature/add-dark-mode
 check "branch <id>: leaves the repos that are not tagged alone" 1 \
   has_branch "$eco/web" feature/add-dark-mode
 
-eco="$(setup_change change-not-approved)"
+eco="$(setup_change change-published)"
+publish_change "$eco" add-export "$(printf -- '- [ ] 1.1 (web) Add the button')"
+check_output "branch <id>: exits 0 when the proposal is published (its PR is open)" 0 "web" \
+  bash -c "cd '$eco' && ./bootstrap.sh branch add-export"
+check "branch <id>: creates feature/<id> from the tasks on spec/<id>" 0 \
+  has_branch "$eco/web" feature/add-export
+git -C "$eco/../remote-eco" switch -q spec/add-export
+printf -- '- [ ] 1.1 (web) Add the button\n- [ ] 2.1 (api) Added during implementation\n' \
+  > "$eco/../remote-eco/openspec/changes/add-export/tasks.md"
+git -C "$eco/../remote-eco" commit -q -am "spec: add-export, api task" && git -C "$eco/../remote-eco" switch -q main
+(cd "$eco" && ./bootstrap.sh branch add-export > /dev/null 2>&1)
+check "branch <id>: run again, creates the branch in a repo added to the tasks later" 0 \
+  has_branch "$eco/api" feature/add-export
+
+eco="$(setup_change change-not-published)"
 mkdir -p "$eco/openspec/changes/local-only"
 echo draft > "$eco/openspec/changes/local-only/proposal.md"
 printf -- '- [ ] 1.1 (api) Something\n' > "$eco/openspec/changes/local-only/tasks.md"
-check_output "branch <id>: exits 1 when the proposal is not merged" 1 "not approved" \
+check_output "branch <id>: exits 1 when the proposal is not published" 1 "not published" \
   bash -c "cd '$eco' && ./bootstrap.sh branch local-only"
-check "branch <id>: creates no branch when the proposal is not merged" 1 \
+check "branch <id>: creates no branch when the proposal is not published" 1 \
   has_branch "$eco/api" feature/local-only
 
 eco="$(setup_change change-remote-tasks)"
 printf -- '- [ ] 1.1 (api) Add the endpoint\n- [ ] 1.2 (web) Added locally\n' \
   > "$eco/openspec/changes/add-dark-mode/tasks.md"
 (cd "$eco" && ./bootstrap.sh branch add-dark-mode > /dev/null 2>&1)
-check "branch <id>: reads the repos from the approved tasks.md, not the local copy" 1 \
+check "branch <id>: reads the repos from the published tasks.md, not the local copy" 1 \
   has_branch "$eco/web" feature/add-dark-mode
 
 eco="$(setup_change change-unknown-repo)"
@@ -211,11 +237,11 @@ chmod +x "$eco/tests/makefile.test.sh"
 check_output "tests: runs every tests/*.test.sh and fails if any fails" 3 "second suite ran" \
   bash -c "cd '$eco' && ./bootstrap.sh tests"
 
-# --- check-approved -------------------------------------------------------
+# --- check-spec -----------------------------------------------------------
 
 # An ecosystem repo cloned from a local "remote" whose main branch holds the proposal
 # for add-dark-mode and the archived proposal for old-change. Prints its folder.
-setup_approved() {
+setup_specs() {
   local case_dir="$TMP/$1" remote="$TMP/$1/remote-eco"
   git init -q -b main "$remote"
   mkdir -p "$remote/openspec/changes/add-dark-mode" "$remote/openspec/changes/archive/2026-01-15-old-change"
@@ -227,29 +253,26 @@ setup_approved() {
   echo "$case_dir/eco"
 }
 
-eco="$(setup_approved approved)"
-check "check-approved: exits 0 when the proposal is on the remote main branch" 0 \
-  bash -c "cd '$eco' && ./bootstrap.sh check-approved add-dark-mode"
-check "check-approved: exits 0 when the proposal is already archived" 0 \
-  bash -c "cd '$eco' && ./bootstrap.sh check-approved old-change"
-check "check-approved: exits 1 when the proposal is not on the remote main branch" 1 \
-  bash -c "cd '$eco' && ./bootstrap.sh check-approved unknown-change"
+eco="$(setup_specs specs)"
+check_output "check-spec: exits 0 when the proposal is merged into the remote main branch" 0 "merged" \
+  bash -c "cd '$eco' && ./bootstrap.sh check-spec add-dark-mode"
+check_output "check-spec: exits 0 when the proposal is archived" 0 "archived" \
+  bash -c "cd '$eco' && ./bootstrap.sh check-spec old-change"
+check "check-spec: exits 1 when the proposal is not on the remote" 1 \
+  bash -c "cd '$eco' && ./bootstrap.sh check-spec unknown-change"
 mkdir -p "$eco/openspec/changes/local-only" && echo draft > "$eco/openspec/changes/local-only/proposal.md"
-check "check-approved: exits 1 when the proposal only exists locally" 1 \
-  bash -c "cd '$eco' && ./bootstrap.sh check-approved local-only"
-git -C "$eco/../remote-eco" switch -q -c spec/pending
-mkdir -p "$eco/../remote-eco/openspec/changes/pending"
-echo proposal > "$eco/../remote-eco/openspec/changes/pending/proposal.md"
-git -C "$eco/../remote-eco" add . && git -C "$eco/../remote-eco" commit -q -m pending
-git -C "$eco/../remote-eco" switch -q main
-check "check-approved: exits 1 when the proposal is only on an unmerged branch" 1 \
-  bash -c "cd '$eco' && ./bootstrap.sh check-approved pending"
-check "check-approved: sees proposals merged after the last fetch" 0 \
-  bash -c "cd '$eco' && git -C ../remote-eco merge -q spec/pending && ./bootstrap.sh check-approved pending"
-check "check-approved: exits 1 without an id" 1 \
-  bash -c "cd '$eco' && ./bootstrap.sh check-approved"
-check "check-approved: exits 1 with an id that is not kebab-case" 1 \
-  bash -c "cd '$eco' && ./bootstrap.sh check-approved ../add-dark-mode"
+check "check-spec: exits 1 when the proposal only exists locally" 1 \
+  bash -c "cd '$eco' && ./bootstrap.sh check-spec local-only"
+publish_change "$eco" pending "- [ ] 1.1 (api) Something"
+check_output "check-spec: exits 0 when the proposal is on spec/<id> of the remote, published after the last fetch" 0 "published" \
+  bash -c "cd '$eco' && ./bootstrap.sh check-spec pending"
+git -C "$eco/../remote-eco" branch -q -D spec/pending
+check "check-spec: exits 1 once spec/<id> is deleted from the remote, even if fetched before" 1 \
+  bash -c "cd '$eco' && ./bootstrap.sh check-spec pending"
+check "check-spec: exits 1 without an id" 1 \
+  bash -c "cd '$eco' && ./bootstrap.sh check-spec"
+check "check-spec: exits 1 with an id that is not kebab-case" 1 \
+  bash -c "cd '$eco' && ./bootstrap.sh check-spec ../add-dark-mode"
 
 # --- doctor ---------------------------------------------------------------
 

@@ -73,8 +73,8 @@ expect "branch ID=<id> creates the branches of a change" "bootstrap branch add-d
 expect "branch NAME= REPOS= passes the repos" "bootstrap branch fix/login api web" branch NAME=fix/login "REPOS=api web"
 expect_failure "branch without ID or NAME+REPOS fails" branch
 expect_failure "branch with NAME and no REPOS fails" branch NAME=fix/login
-expect "check-approved ID=<id> runs the check" "bootstrap check-approved add-dark-mode" check-approved ID=add-dark-mode
-expect_failure "check-approved without ID fails" check-approved
+expect "check-spec ID=<id> runs the check" "bootstrap check-spec add-dark-mode" check-spec ID=add-dark-mode
+expect_failure "check-spec without ID fails" check-spec
 expect "doctor runs bootstrap.sh doctor" "bootstrap doctor" doctor
 expect "tests runs bootstrap.sh tests" "bootstrap tests" tests
 
@@ -92,7 +92,7 @@ expect "ENV_TARGETS sets which targets are delegated" "api seed" seed ENV_REPO=a
 
 # --- help -----------------------------------------------------------------
 
-expect_listed "help is the default target and lists the commands" "check-approved"
+expect_listed "help is the default target and lists the commands" "check-spec"
 expect_listed "help lists <repo>/<target>" "<repo>/<target>" help
 expect_listed "help lists the environment targets when ENV_REPO is set" "up.*api" help ENV_REPO=api
 

@@ -28,7 +28,7 @@ the **ecosystem repo**, that holds what the services share:
 - **Product context** (`docs/product/`): sensitive areas, external constraints, glossary
   and decisions — what cannot be read in the code.
 - **OpenSpec** (`openspec/`): one proposal per change, even when it spans several repos,
-  reviewed in a PR before any code is written.
+  published in a PR before any code is written and merged once the change is built.
 - **`bootstrap.sh`**: gives everyone the same folder layout and keeps every repo's main
   branch up to date without ever touching your work.
 
@@ -54,10 +54,10 @@ your-ecosystem/                 ← this template
 
 ## Workflows
 
-- **[New features](docs/workflows/feature.md):** proposal → review → branches in every
-  affected repo → implementation with TDD → verification → one PR per repo → archive. A
-  change dropped after approval is [abandoned](docs/workflows/feature.md#abandoning-a-change),
-  not archived.
+- **[New features](docs/workflows/feature.md):** proposal PR → branches in every affected
+  repo → implementation with TDD → verification → one PR per repo → archive → the proposal
+  PR is reviewed and merged. A dropped change is
+  [abandoned](docs/workflows/feature.md#abandoning-a-change), not archived.
 - **[Bug fixes](docs/workflows/bugfix.md):** root cause first, a test that reproduces the
   bug, a minimal fix. A proposal only when the fix changes behaviour, touches a sensitive
   area or changes a contract between services.
@@ -74,14 +74,14 @@ GitLab use `glab mr create --target-branch <main>`.
 | --- | --- | --- |
 | 1 | (Optional) Explore the idea before proposing | `/opsx:explore` |
 | 2 | Create the proposal (proposal, design, specs and tasks) | `/opsx:propose <description>` |
-| 3 | Open the proposal's PR: the agent offers it when step 2 ends | `gh pr create --base <main> --title "spec: <id>"` |
-| 4 | Review and merge the proposal's PR: a person does it | Git host |
-| 5 | Create `feature/<id>` in the affected repos. Creates nothing until the proposal is merged | `./bootstrap.sh branch <id>` |
-| 6 | Implement task by task, with TDD. Progress in `tasks.md` goes on `spec/<id>-progress`, pushed, no PR | `/opsx:apply <id>` |
-| 7 | If the expected behaviour changes: update the proposal and open a PR to review it | `/opsx:update <id>` |
+| 3 | Open the proposal's PR, without merging it: the agent offers it when step 2 ends | `gh pr create --base <main> --title "spec: <id>"` |
+| 4 | Create `feature/<id>` in the affected repos. Creates nothing until the proposal's PR is open | `./bootstrap.sh branch <id>` |
+| 5 | Implement task by task, with TDD. Progress in `tasks.md` is pushed to `spec/<id>` | `/opsx:apply <id>` |
+| 6 | If the expected behaviour changes: update the proposal on `spec/<id>` and note it in its PR description | `/opsx:update <id>` |
+| 7 | Open one PR per repo, with `<id>` in the title and a link to the proposal's PR | `gh pr create --base <main>` |
 | 8 | (Optional) Check the implementation meets the proposal | `/opsx:verify <id>` |
-| 9 | Open one PR per repo, with `<id>` in the title | `gh pr create --base <main>` |
-| 10 | Once the last code PR is merged: archive on `spec/<id>-progress` and open its PR | `/opsx:archive <id>` |
+| 9 | Once every code PR is merged: archive on `spec/<id>` | `/opsx:archive <id>` |
+| 10 | Review and merge the proposal's PR: a person does it | Git host |
 
 **Bug fix** (no proposal, unless it changes expected behaviour, touches a sensitive area or changes a contract)
 
@@ -91,13 +91,13 @@ GitLab use `glab mr create --target-branch <main>`.
 | 2 | Reproduce, find the root cause and write the failing test | — |
 | 3 | Fix and open one PR per repo | `gh pr create --base <main>` |
 
-**Abandoning an approved change**
+**Abandoning a change**
 
 | # | Step | Command |
 | --- | --- | --- |
-| 1 | Delete the proposal in an ecosystem PR, with the reason in its description | `git switch -c spec/<id>-abandon origin/<main> && git rm -r openspec/changes/<id>` |
+| 1 | Close the proposal's PR without merging, with the reason in a comment | Git host |
 | 2 | Close the open code PRs and revert the ones already merged | Git host |
-| 3 | Delete `feature/<id>` and `spec/<id>-progress` | `git push origin --delete <branch>` |
+| 3 | Delete `spec/<id>` and `feature/<id>` | `git push origin --delete <branch>` |
 
 ### Example: export orders to CSV
 
@@ -106,19 +106,20 @@ A feature that touches `api` (an export endpoint) and `web` (a button).
 ```bash
 # In the agent: the proposal, with id export-orders-csv
 /opsx:propose Let users export their order list to CSV from the web app
-# The agent offers to open the PR "spec: export-orders-csv". A person reviews and merges it.
+# The agent offers to open the PR "spec: export-orders-csv". It stays open until the end.
 
-# In the terminal: create the branches. Before the proposal's PR is merged, it refuses:
+# In the terminal: create the branches. Without the proposal's PR, it refuses:
 ./bootstrap.sh branch export-orders-csv
-# !! export-orders-csv: not approved. openspec/changes/export-orders-csv/proposal.md is not on main yet: its PR must be merged first.
+# !! export-orders-csv: not published. Push spec/export-orders-csv with openspec/changes/export-orders-csv/ and open its PR (spec: export-orders-csv) before implementing.
 
-# Once merged:
+# With the PR open:
 ./bootstrap.sh branch export-orders-csv
 #    repos of the change: api web
 # -> api: created feature/export-orders-csv from main
 # -> web: created feature/export-orders-csv from main
 
-# In the agent: implement. Ticked tasks are pushed to spec/export-orders-csv-progress
+# In the agent: implement. Ticked tasks, and every change to the proposal made with
+# /opsx:update, are pushed to spec/export-orders-csv
 /opsx:apply export-orders-csv
 
 # One PR per repo, with the id in the title:
@@ -127,7 +128,8 @@ A feature that touches `api` (an export endpoint) and `web` (a button).
 
 # Once both code PRs are merged, in the agent:
 /opsx:archive export-orders-csv
-# The agent opens the archive PR. Once merged, the spec lives in openspec/specs/.
+# The agent pushes the archive to spec/export-orders-csv and says the proposal's PR is
+# ready. A person reviews and merges it: the spec then lives in openspec/specs/.
 ```
 
 ## Getting started
@@ -156,8 +158,8 @@ answers with the ecosystem rules, everything is wired up.
 | `./bootstrap.sh --all` | Same, including optional repos |
 | `./bootstrap.sh status` | Branch and state of every repo |
 | `./bootstrap.sh branch <branch> <repo>...` | Creates the branch from the main branch (or switches to it) in several repos |
-| `./bootstrap.sh branch <id>` | Same, with `feature/<id>` in the repos tagged in the change's `tasks.md`. Only if its proposal is merged |
-| `./bootstrap.sh check-approved <id>` | Succeeds only if the proposal `<id>` is merged into the ecosystem main branch |
+| `./bootstrap.sh branch <id>` | Same, with `feature/<id>` in the repos tagged in the `tasks.md` of `spec/<id>`. Only if the proposal's PR is open |
+| `./bootstrap.sh check-spec <id>` | Says, without creating anything, whether the proposal `<id>` is published (PR open), merged or archived |
 | `./bootstrap.sh doctor` | Checks the ecosystem repo is filled in and set up: placeholders, TODOs, OpenSpec, system map age, files left out |
 | `./bootstrap.sh tests` | Runs the tests of `bootstrap.sh` and the optional Makefile, and shellcheck if installed |
 
@@ -193,8 +195,12 @@ git config --global url."https://github.com/".insteadOf "git@github.com:"
   one day, the system map and product context stay.
 - **Minimal by default.** No orchestration layer, no extra CLI, no skill packs. Add more
   only when an agent actually fails in a way rules cannot fix.
-- **Humans approve, agents never merge.** The agent can open the proposal's PR, but it only
-  implements once that PR is merged, and it never approves or merges anything.
+- **One ecosystem PR per change, merged at the end.** The proposal's PR is opened before any
+  code and merged once the change is built, with the archive, so the main branch only gets
+  what was built. The accepted risk: code can be merged before the spec is reviewed. Changes
+  that need agreement first (sensitive areas, contracts) get their review before starting.
+- **Humans approve, agents never merge.** The agent can open PRs, but it never approves or
+  merges anything.
 
 ## Requirements
 
