@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for the optional templates/Makefile. They build a fake ecosystem repo whose
+# Tests for the root Makefile. They build a fake ecosystem repo whose
 # bootstrap.sh and repo Makefiles only print what they receive, so nothing touches git,
 # Docker or the network.
 #
@@ -7,7 +7,7 @@
 
 set -uo pipefail
 
-MAKEFILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/templates/Makefile"
+MAKEFILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/Makefile"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 

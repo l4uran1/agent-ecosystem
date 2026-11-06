@@ -1,5 +1,5 @@
-# Optional shortcuts for the ecosystem repo. To use them, copy this file to the root:
-#   cp templates/Makefile Makefile
+# Shortcuts for the ecosystem repo, run from the root. If your team does not use make,
+# delete this file: bootstrap.sh does the same.
 # The logic stays in bootstrap.sh and in each repo's own Makefile: this file only gives it
 # short names, so everything runs from the ecosystem root.
 #
