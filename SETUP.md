@@ -105,17 +105,18 @@ For each service repo:
   (GitHub) or `.gitlab/merge_request_templates/Default.md` (GitLab). GitLab Premium can
   define it once at group level instead.
 
-### Optional: a Makefile
+### The Makefile
 
-If your team prefers `make`, copy `templates/Makefile` to the root. It adds short names for
+The root `Makefile` adds short names for
 `bootstrap.sh` (`make sync`, `make branch ID=<id>`, `make doctor`...) and
 `make <repo>/<target>`, which runs any target of any repo's Makefile from the root, e.g.
 `make api/test`.
 
 ```bash
-cp templates/Makefile Makefile
 make help
 ```
+
+If your team does not use `make`, delete it: `bootstrap.sh` does the same.
 
 If one repo starts the development environment of the whole system (for example, its docker
 compose file starts every service), set `ENV_REPO` to that repo in the Makefile. `make up`,
