@@ -1,93 +1,100 @@
 # agent-ecosystem
 
-**Your repos are an ecosystem. Give your AI coding agents the whole picture.**
+**Your repositories are an ecosystem. Give your AI coding agents the whole picture.**
 
-A template for teams whose services live in **several tightly coupled repos** and who want
-their AI coding agents to work with **shared context and a shared spec-driven process**.
+Coding agents are great inside one repository, but most systems span several repositories: an agent working in
+one of them cannot see the dependences with other repositories, so it proposes changes that are reasonable in isolation and
+break something else. This template turns the folder where you clone all your services into a repo of its own,
+the **ecosystem repository**, that gives every agent the shared rules, the contracts between
+services and a spec-driven process for changes that cross repositories.
 
-Specs are handled with [OpenSpec](https://github.com/Fission-AI/OpenSpec), tested with version
-1.13.2. Works with any agent OpenSpec supports (Claude Code, Cursor, Codex, GitHub Copilot
-and others), and with GitHub or GitLab.
+```mermaid
+flowchart LR
+    agent(["🤖 Your coding agent"])
+    eco{{"📚 Ecosystem repo<br/>rules · system map · specs"}}
+    api["api/"]
+    web["web/"]
+    worker["worker/"]
 
-## The problem
+    agent -- starts at the root --> eco
+    eco --> api & web & worker
 
-Coding agents are good inside one repo. Most real systems are not one repo: a backend
-publishes to a queue another service consumes, a worker reads tables it does not own, a
-front end depends on an internal endpoint. An agent working in one repo cannot see any of
-that, so it proposes changes that are reasonable in isolation and break something else.
-And each developer ends up feeding the agent context their own way.
-
-## The approach
-
-The folder where your team already clones every service becomes a git repo of its own,
-the **ecosystem repo**, that holds what the services share:
-
-- **Rules for agents** (`AGENTS.md`): how the team works, once, for every agent.
-- **A system map** (`docs/system-map.md`): the contracts between services — the thing an
-  agent in a single repo can never see.
-- **Product context** (`docs/product/`): sensitive areas, external constraints, glossary
-  and decisions — what cannot be read in the code.
-- **OpenSpec** (`openspec/`): one proposal per change, even when it spans several repos,
-  published in a PR before any code is written and merged once the change is built.
-- **`bootstrap.sh`**: gives everyone the same folder layout and keeps every repo's main
-  branch up to date without ever touching your work.
-
-The service repos stay exactly as they are. The ecosystem repo ignores them.
-
-```
-your-ecosystem/                 ← this template
-├── AGENTS.md                   ← shared rules for every agent
-├── CLAUDE.md                   ← imports AGENTS.md for Claude Code
-├── bootstrap.sh                ← clones and updates the service repos
-├── repos.txt                   ← list of service repos
-├── docs/
-│   ├── system-map.md           ← contracts between services
-│   ├── product/                ← sensitive areas, constraints, glossary, decisions
-│   └── workflows/              ← step-by-step guides: features and bug fixes
-├── openspec/                   ← specs and changes for the whole system
-├── templates/                  ← proposal PR description; per-repo AGENTS.md, CLAUDE.md, PR template; optional Makefile
-├── tests/                      ← tests for bootstrap.sh and the optional Makefile
-├── api/                        ← service repos: own git, ignored by the ecosystem repo
-├── web/
-└── worker/
+    classDef agentStyle fill:#7c3aed,stroke:#5b21b6,color:#fff
+    classDef ecoStyle fill:#0284c7,stroke:#075985,color:#fff
+    classDef repoStyle fill:#f1f5f9,stroke:#64748b,color:#0f172a
+    class agent agentStyle
+    class eco ecoStyle
+    class api,web,worker repoStyle
 ```
 
-## Workflows
+Works with any agent [OpenSpec](https://github.com/Fission-AI/OpenSpec) supports (Claude
+Code, Cursor, Codex, GitHub Copilot and others), on GitHub or GitLab. Tested with OpenSpec
+1.13.2.
 
-- **[New features](docs/workflows/feature.md):** proposal PR → branches in every affected
-  repo → implementation with TDD → verification → one PR per repo → archive → the proposal
-  PR is reviewed and merged. A dropped change is
-  [abandoned](docs/workflows/feature.md#abandoning-a-change), not archived.
-- **[Bug fixes](docs/workflows/bugfix.md):** root cause first, a test that reproduces the
-  bug, a minimal fix. A proposal only when the fix changes behaviour, touches a sensitive
-  area or changes a contract between services.
+## Quick start
 
-### At a glance
+**Adopting it for your team** (one person, once; the full guide is [SETUP.md](SETUP.md)):
+
+1. Click **Use this template** (or clone it and push it to your git host) and keep the new
+   repo **private**: it describes how your system works and where it is fragile.
+2. List your service repos in `repos.txt` and run `make sync`: it clones them side by side.
+3. Install OpenSpec and run `openspec init --tools claude` (or the agents your team uses).
+4. Fill in `docs/system-map.md` and `docs/product/`, then run `make doctor` until
+   it shows no errors.
+
+**Joining a team that already uses it:**
+
+```bash
+git clone <your-ecosystem-url> ecosystem && cd ecosystem
+make sync          # or make sync-all to also clone the optional repos
+npm install -g @fission-ai/openspec@<X.Y.Z>
+```
+
+Every `make` command is a shortcut for `bootstrap.sh` (see [Daily use](#daily-use)): without
+`make`, run `./bootstrap.sh` directly.
+
+Then start your agent from the ecosystem root, never from inside a service repo. Quick
+check: ask it "what does AGENTS.md say about when to read the system map?". If it answers
+with the ecosystem rules, everything is wired up.
+
+## How a change flows
+
+```mermaid
+flowchart LR
+    p["/opsx:propose"] --> pr["Agent opens the proposal PR<br/>and creates feature/&lt;id&gt; in each repo"]
+    pr --> a["/opsx:apply<br/>TDD, one PR per repo"]
+    a --> ar["/opsx:archive<br/>once code PRs are merged"]
+    ar --> m["A person merges<br/>the proposal PR"]
+```
 
 The full rules are in `AGENTS.md`. `/opsx:*` commands run in the agent's chat, from the
 ecosystem root; everything else runs in the terminal. Commands are shown for GitHub; on
 GitLab use `glab mr create --target-branch <main>`.
 
-**New feature**
-
 | # | Step | Command |
 | --- | --- | --- |
 | 1 | (Optional) Explore the idea before proposing | `/opsx:explore` |
-| 2 | Create the proposal (proposal, design, specs and tasks) | `/opsx:propose <description>` |
-| 3 | Open the proposal's PR, without merging it: the agent offers it when step 2 ends | `gh pr create --base <main> --title "spec: <id>"` |
-| 4 | Create `feature/<id>` in the affected repos. Creates nothing until the proposal's PR is open | `./bootstrap.sh branch <id>` |
-| 5 | Implement task by task, with TDD. Progress in `tasks.md` is pushed to `spec/<id>` | `/opsx:apply <id>` |
-| 6 | If the expected behaviour changes: update the proposal on `spec/<id>` and note it in its PR description | `/opsx:update <id>` |
-| 7 | Open one PR per repo, with `<id>` in the title and a link to the proposal's PR | `gh pr create --base <main>` |
-| 8 | (Optional) Check the implementation meets the proposal | `/opsx:verify <id>` |
-| 9 | Once every code PR is merged: archive on `spec/<id>` | `/opsx:archive <id>` |
-| 10 | Review and merge the proposal's PR: a person does it | Git host |
+| 2 | Create the proposal (proposal, design, specs and tasks). The agent then opens the proposal's PR (`spec: <id>`, merged only at the end) and creates `feature/<id>` in the affected repos | `/opsx:propose <description>` |
+| 3 | Implement task by task, with TDD. Progress in `tasks.md` is pushed to `spec/<id>` | `/opsx:apply <id>` |
+| 4 | If the expected behaviour changes: update the proposal on `spec/<id>` and note it in its PR description | `/opsx:update <id>` |
+| 5 | Open one PR per repo, with `<id>` in the title and a link to the proposal's PR | `gh pr create --base <main>` |
+| 6 | (Optional) Check the implementation meets the proposal | `/opsx:verify <id>` |
+| 7 | Once every code PR is merged: archive the proposal on `spec/<id>`, which gets its PR ready for review | `/opsx:archive <id>` |
+| 8 | Review and merge the proposal's PR: a person does it | Git host |
 
-**Bug fix** (no proposal, unless it changes expected behaviour, touches a sensitive area or changes a contract)
+Step-by-step guides: [new features](docs/workflows/feature.md) and
+[bug fixes](docs/workflows/bugfix.md). A dropped change is
+[abandoned](docs/workflows/feature.md#abandoning-a-change), not archived.
+
+<details>
+<summary><b>Bug fixes and abandoning a change</b></summary>
+
+**Bug fix** (no proposal, unless it changes expected behaviour, touches a sensitive area or
+changes a contract): root cause first, a test that reproduces the bug, a minimal fix.
 
 | # | Step | Command |
 | --- | --- | --- |
-| 1 | Create the branch in the affected repos | `./bootstrap.sh branch fix/<short-description> <repo>...` |
+| 1 | Create the branch in the affected repos | `make branch NAME=fix/<short-description> REPOS="<repo> ..."` |
 | 2 | Reproduce, find the root cause and write the failing test | — |
 | 3 | Fix and open one PR per repo | `gh pr create --base <main>` |
 
@@ -99,21 +106,18 @@ GitLab use `glab mr create --target-branch <main>`.
 | 2 | Close the open code PRs and revert the ones already merged | Git host |
 | 3 | Delete `spec/<id>` and `feature/<id>` | `git push origin --delete <branch>` |
 
-### Example: export orders to CSV
+</details>
+
+<details>
+<summary><b>Example: export orders to CSV</b></summary>
 
 A feature that touches `api` (an export endpoint) and `web` (a button).
 
 ```bash
 # In the agent: the proposal, with id export-orders-csv
 /opsx:propose Let users export their order list to CSV from the web app
-# The agent offers to open the PR "spec: export-orders-csv". It stays open until the end.
-
-# In the terminal: create the branches. Without the proposal's PR, it refuses:
-./bootstrap.sh branch export-orders-csv
-# !! export-orders-csv: not published. Push spec/export-orders-csv with openspec/changes/export-orders-csv/ and open its PR (spec: export-orders-csv) before implementing.
-
-# With the PR open:
-./bootstrap.sh branch export-orders-csv
+# Then, on its own, the agent opens the PR "spec: export-orders-csv" (it stays open until
+# the end) and creates the branches with ./bootstrap.sh branch export-orders-csv:
 #    repos of the change: api web
 # -> api: created feature/export-orders-csv from main
 # -> web: created feature/export-orders-csv from main
@@ -132,40 +136,56 @@ A feature that touches `api` (an export endpoint) and `web` (a button).
 # ready. A person reviews and merges it: the spec then lives in openspec/specs/.
 ```
 
-## Getting started
+</details>
 
-**Adopting the template for your team:** click **Use this template** on GitHub (or clone it
-and push it to your git host), then follow [SETUP.md](SETUP.md).
+## What's in the template
 
-**Joining a team that already uses it:**
-
-```bash
-git clone <your-ecosystem-url> ecosystem
-cd ecosystem
-./bootstrap.sh
-npm install -g @fission-ai/openspec@<X.Y.Z>
+```
+your-ecosystem/                 ← this template
+├── AGENTS.md                   ← shared rules for every agent
+├── CLAUDE.md                   ← imports AGENTS.md for Claude Code
+├── bootstrap.sh                ← clones and updates the service repos
+├── Makefile                    ← make shortcuts for bootstrap.sh and every repo
+├── repos.txt                   ← list of service repos
+├── docs/
+│   ├── system-map.md           ← contracts between services
+│   ├── product/                ← sensitive areas, constraints, glossary, decisions
+│   └── workflows/              ← step-by-step guides: features and bug fixes
+├── openspec/                   ← specs and changes for the whole system
+├── templates/                  ← proposal PR description; per-repo AGENTS.md, CLAUDE.md, PR template
+├── tests/                      ← tests for bootstrap.sh and the Makefile
+├── api/                        ← service repos: own git, ignored by the ecosystem repo
+├── web/
+└── worker/
 ```
 
-Then start your agent from the ecosystem root, never from inside a service repo.
-Quick check: ask it "what does AGENTS.md say about when to read the system map?". If it
-answers with the ecosystem rules, everything is wired up.
+- **Rules for agents** (`AGENTS.md`): how the team works, once, for every agent. Without it,
+  each developer ends up feeding the agent context their own way.
+- **A system map** (`docs/system-map.md`): the contracts between services — the thing an
+  agent in a single repo can never see.
+- **Product context** (`docs/product/`): sensitive areas, external constraints, glossary
+  and decisions — what cannot be read in the code.
+- **OpenSpec** (`openspec/`): one proposal per change, even when it spans several repos,
+  published in a PR before any code is written and merged once the change is built.
+- **`bootstrap.sh`**: gives everyone the same folder layout and keeps every repo's main
+  branch up to date without ever touching your work.
 
 ## Daily use
 
-| Command | What it does |
-| --- | --- |
-| `./bootstrap.sh` | Clones missing repos and brings every repo's main branch up to date, whatever branch you are on |
-| `./bootstrap.sh --all` | Same, including optional repos |
-| `./bootstrap.sh status` | Branch and state of every repo |
-| `./bootstrap.sh branch <branch> <repo>...` | Creates the branch from the main branch (or switches to it) in several repos |
-| `./bootstrap.sh branch <id>` | Same, with `feature/<id>` in the repos tagged in the `tasks.md` of `spec/<id>`. Only if the proposal's PR is open |
-| `./bootstrap.sh check-spec <id>` | Says, without creating anything, whether the proposal `<id>` is published (PR open), merged or archived |
-| `./bootstrap.sh doctor` | Checks the ecosystem repo is filled in and set up: placeholders, TODOs, OpenSpec, system map age, files left out |
-| `./bootstrap.sh tests` | Runs the tests of `bootstrap.sh` and the optional Makefile, and shellcheck if installed |
+Run them from the ecosystem root. `make help` lists them; each one calls `bootstrap.sh`,
+which you can also run directly.
 
-Prefer `make`? Copy `templates/Makefile` to the root (see [SETUP.md](SETUP.md)): it adds
-`make sync`, `make branch ID=<id>`, `make doctor`... and `make <repo>/<target>` to run any
-repo's Makefile target from the root.
+| `make` | `bootstrap.sh` | What it does |
+| --- | --- | --- |
+| `make sync` | `./bootstrap.sh` | Clones missing repos and brings every repo's main branch up to date, whatever branch you are on |
+| `make sync-all` | `./bootstrap.sh --all` | Same, including optional repos |
+| `make status` | `./bootstrap.sh status` | Branch and state of every repo |
+| `make branch NAME=<branch> REPOS="<repo> ..."` | `./bootstrap.sh branch <branch> <repo>...` | Creates the branch from the main branch (or switches to it) in several repos |
+| `make branch ID=<id>` | `./bootstrap.sh branch <id>` | Same, with `feature/<id>` in the repos tagged in the `tasks.md` of `spec/<id>`. Only if the proposal's PR is open |
+| `make check-spec ID=<id>` | `./bootstrap.sh check-spec <id>` | Says, without creating anything, whether the proposal `<id>` is published (PR open), merged or archived |
+| `make doctor` | `./bootstrap.sh doctor` | Checks the ecosystem repo is filled in and set up: placeholders, TODOs, OpenSpec, system map age, files left out |
+| `make tests` | `./bootstrap.sh tests` | Runs the tests of `bootstrap.sh` and the Makefile, and shellcheck if installed |
+| `make <repo>/<target>` | — | Runs `make <target>` in that repo from the root, e.g. `make api/test` |
 
 The script never deletes anything, never switches your branch and never touches your files:
 
@@ -173,7 +193,8 @@ The script never deletes anything, never switches your branch and never touches 
 - **On another branch:** updates your local main branch in the background, without moving you.
 - **On the main branch with uncommitted changes:** only fetches; pull once you commit.
 
-### If you use an SSH alias or HTTPS
+<details>
+<summary><b>If you use an SSH alias or HTTPS</b></summary>
 
 `repos.txt` always uses the canonical URL. If you reach the git host through another host
 name (an alias in `~/.ssh/config`, a second account, or HTTPS), do not edit `repos.txt`;
@@ -186,6 +207,8 @@ git config --global url."git@github-work:".insteadOf "git@github.com:"
 # HTTPS instead of SSH
 git config --global url."https://github.com/".insteadOf "git@github.com:"
 ```
+
+</details>
 
 ## Design choices
 
@@ -205,6 +228,7 @@ git config --global url."https://github.com/".insteadOf "git@github.com:"
 ## Requirements
 
 - Bash (macOS, Linux, or WSL / Git Bash on Windows) and git 2.23+.
+- `make` for the shortcuts (optional: `./bootstrap.sh` does the same).
 - Node.js 20.19+ for the OpenSpec CLI.
 - `gh` or `glab` if you want agents to open PRs for you.
 
