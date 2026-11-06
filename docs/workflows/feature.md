@@ -65,6 +65,8 @@ reviewer sees the impact before any code exists.
 
 ### Step 3 · Open the proposal's PR
 
+The agent does it on its own as soon as `/opsx:propose` finishes, then goes on to step 4.
+
 The proposal lives on the branch `spec/<id>` and its PR stays open for the whole
 implementation: it is merged **at the end**, once every code PR is merged, and it carries the
 archive too. One ecosystem PR per change, so the main branch only gets what was built.
@@ -75,10 +77,10 @@ Reviewers can comment at any time. **The accepted risk** is that code reaches th
 branch before anyone has reviewed the spec: if the reviewer disagrees at the end with
 something already merged, it is fixed with new PRs or reverted. If the change needs
 agreement before it is built (it touches a sensitive area or a contract between services),
-ask for the review now, before step 4, even though the PR is only merged at the end.
+ask for the review now, before implementing (step 5), even though the PR is only merged at the end.
 
 **The PR description is the review.** OpenSpec writes several files, and not all of them are
-for people. When `/opsx:propose` finishes, the agent offers to open the PR and writes its
+for people. When `/opsx:propose` finishes, the agent opens the PR and writes its
 description from `templates/proposal-pr.md`: a five-minute summary in plain language with the
 behaviour changes, scope, impact on other services, risks and the decisions the reviewer
 must confirm. The agent keeps it up to date during the implementation: changes to the
@@ -105,7 +107,8 @@ agent can also rewrite the PR description so it stays in sync:
 Then update the description of the proposal's PR so it matches the new proposal.
 ```
 
-If you prefer to open the PR by hand, ask the agent for the description first:
+If the agent cannot open it (no `gh`/`glab`, no permission), it stops and says so. Open it
+by hand, asking the agent for the description first:
 
 ```text
 Fill in templates/proposal-pr.md for openspec/changes/<id>/ and save it as /tmp/pr-<id>.md.
@@ -127,8 +130,9 @@ The phase turns the published tasks into tested code, without leaving the propos
 
 ### Step 4 · Create the branches
 
-Create `feature/<id>` in every affected repo. The script checks that the proposal is
-published (`spec/<id>` exists on the remote) and takes the repos from the `(repo)` tags of the
+The agent does it right after opening the proposal's PR: it creates `feature/<id>` in every
+affected repo. The script checks that the proposal is published (`spec/<id>` exists on the
+remote) and takes the repos from the `(repo)` tags of the
 `tasks.md` on that branch, so nobody has to list them by hand. It starts each branch from
 the latest main branch on the remote, even if the repo is on another branch.
 
@@ -287,7 +291,7 @@ review, never the proposal's PR.
 | --- | --- | --- | --- | --- |
 | Explore | `/opsx:explore` | Chat | Conclusions for the proposal | No |
 | Proposal | `/opsx:propose` | Ecosystem repo, PR on `spec/<id>` open until the end | Proposal, specs, tasks with their tests, updated map | Before building only for sensitive areas or contracts |
-| Branches | `bootstrap.sh branch <id>` | Affected repos | Same branch everywhere, only if the proposal's PR is open | No |
+| Branches | `bootstrap.sh branch <id>`, run by the agent after `/opsx:propose` | Affected repos | Same branch everywhere, only if the proposal's PR is open | No |
 | Plan | `tasks.md` refined by the agent | Chat | Files and first test per task | Quick |
 | Implementation | `/opsx:apply` + TDD rules | Affected repos | Tested code; progress and proposal changes on `spec/<id>` | No (noted in the proposal's PR) |
 | Verification and review | `/opsx:verify` + team | Affected repos | One PR per repo, linked to the proposal | **Yes** |

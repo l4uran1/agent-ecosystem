@@ -58,12 +58,16 @@ any change in them requires an OpenSpec proposal, however small it looks.
   merged, and it also carries the archive: one ecosystem PR per change, so the main branch
   only gets what was built.
 - Do not implement anything until the proposal's PR is open.
-- When `/opsx:propose` finishes, offer to open the proposal's PR in the ecosystem repo. If the
-  person accepts: create the branch `spec/<id>` from an up-to-date main branch, commit only
-  `openspec/changes/<id>/` (and `docs/system-map.md` if it changed), push, and open the PR
-  against the main branch. Write its description by filling in `templates/proposal-pr.md`:
-  plain language, for a reviewer who has not read the proposal, readable in five minutes.
-  Never merge or approve a PR: a person does that.
+- When `/opsx:propose` finishes, without asking, do both steps below and then report the PR
+  link and the branches created:
+  1. Open the proposal's PR in the ecosystem repo: create the branch `spec/<id>` from an
+     up-to-date main branch, commit only `openspec/changes/<id>/` (and `docs/system-map.md`
+     if it changed), push, and open the PR against the main branch. Write its description by
+     filling in `templates/proposal-pr.md`: plain language, for a reviewer who has not read
+     the proposal, readable in five minutes. Never merge or approve a PR: a person does that.
+  2. Create the change's branches: `./bootstrap.sh branch <id>` (below).
+  If opening the PR fails (no git host CLI, no permission), stop there, say why and give the
+  commands for the person to run.
 - Create the branches from the ecosystem root: `./bootstrap.sh branch <id>`. It checks that
   the proposal is published (`spec/<id>` exists on the remote) and creates `feature/<id>` in
   the repos tagged `(repo)` in the `tasks.md` of that branch. If it fails, do not implement:
