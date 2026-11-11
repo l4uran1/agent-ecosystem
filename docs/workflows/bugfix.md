@@ -83,7 +83,10 @@ in all of them.
 
 ```bash
 ./bootstrap.sh branch fix/<short-description> <repo>
+# -> <repo>: fix/<short-description> in <repo>/.worktrees/fix/<short-description>
 ```
+
+Work in that worktree: the repo's main checkout stays on the main branch.
 
 ### Step 5 · Write the test that reproduces the bug
 
@@ -128,12 +131,12 @@ Open the PR with the root cause explained: the reviewer needs to understand why 
 judge whether the fix is right.
 
 ```bash
-cd <repo>
+cd <repo>/.worktrees/fix/<short-description>
 git push -u origin fix/<short-description>
 gh pr create --base <main> --title "fix: <summary>" \
   --body "Root cause: <explanation>. How to reproduce: <steps>. Test: <name>."
 # GitLab: glab mr create --target-branch <main> --title "fix: <summary>" --description "..."
-cd ..
+cd -
 ```
 
 ### Step 8 · Merge and clean up
@@ -141,7 +144,7 @@ cd ..
 Merge from your git host once CI is green, then:
 
 ```bash
-git -C <repo> switch <main>
+git -C <repo> worktree remove .worktrees/fix/<short-description>
 git -C <repo> branch -d fix/<short-description>
 ./bootstrap.sh
 ```

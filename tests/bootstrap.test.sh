@@ -81,14 +81,62 @@ check "branch: exits non-zero when a repo is not cloned" 1 \
 check "branch: still creates the branch in the repos that exist" 0 \
   git -C "$eco/api" show-ref --verify --quiet refs/heads/feature/x
 
-eco="$(setup branch-switch-fails)"
-(cd "$eco" && ./bootstrap.sh branch feature/x api > /dev/null)
-echo committed > "$eco/api/a"
-git -C "$eco/api" add a && git -C "$eco/api" commit -q -m a
-git -C "$eco/api" switch -q main
-echo untracked > "$eco/api/a"   # switching back would overwrite it, so git refuses
-check "branch: exits non-zero when switching to an existing branch fails" 1 \
+eco="$(setup branch-worktree-fails)"
+mkdir -p "$eco/api/.worktrees/feature"
+echo blocker > "$eco/api/.worktrees/feature/x"   # git cannot create the worktree there
+check "branch: exits non-zero when the worktree cannot be created" 1 \
   bash -c "cd '$eco' && ./bootstrap.sh branch feature/x api web"
+
+# --- branch: worktrees ----------------------------------------------------
+
+eco="$(setup worktree-new)"
+git -C "$eco/../remote-api" commit -q --allow-empty -m "after clone"
+(cd "$eco" && ./bootstrap.sh branch feature/x api > /dev/null 2>&1)
+check "worktree: creates the branch in <repo>/.worktrees/<branch>" 0 \
+  bash -c "[[ \$(git -C '$eco/api/.worktrees/feature/x' branch --show-current) == feature/x ]]"
+check "worktree: leaves the main checkout on the main branch" 0 \
+  bash -c "[[ \$(git -C '$eco/api' branch --show-current) == main ]]"
+check "worktree: starts from the latest main branch on the remote" 0 \
+  bash -c "[[ \$(git -C '$eco/api/.worktrees/feature/x' rev-parse HEAD) == \$(git -C '$eco/../remote-api' rev-parse main) ]]"
+check "worktree: the repo ignores .worktrees/ without touching its .gitignore" 0 \
+  bash -c "[[ -z \$(git -C '$eco/api' status --porcelain) ]]"
+check_output "worktree: run again, says where the existing worktree is" 0 "api/\.worktrees/feature/x" \
+  bash -c "cd '$eco' && ./bootstrap.sh branch feature/x api"
+check_output "status: lists the worktrees of each repo with their branch" 0 "\.worktrees/feature/x +feature/x" \
+  bash -c "cd '$eco' && ./bootstrap.sh status"
+
+eco="$(setup worktree-existing-branch)"
+git -C "$eco/api" branch -q fix/old main
+(cd "$eco" && ./bootstrap.sh branch fix/old api > /dev/null 2>&1)
+check "worktree: an existing branch gets a worktree instead of a new branch" 0 \
+  bash -c "[[ \$(git -C '$eco/api/.worktrees/fix/old' branch --show-current) == fix/old ]]"
+
+# A repo folder that is a symbolic link to a clone kept elsewhere.
+setup_symlink() {
+  local eco
+  eco="$(setup "$1")"
+  mv "$eco/api" "$eco/../clone-api" && ln -s ../clone-api "$eco/api"
+  echo "$eco"
+}
+
+eco="$(setup_symlink worktree-symlink)"
+(cd "$eco" && ./bootstrap.sh branch feature/x api > /dev/null 2>&1)
+check "symlink: the link is replaced by a worktree of the branch at the same path" 0 \
+  bash -c "[[ ! -L '$eco/api' && \$(git -C '$eco/api' branch --show-current) == feature/x ]]"
+check "symlink: the clone the link pointed to stays on the main branch" 0 \
+  bash -c "[[ \$(git -C '$eco/../clone-api' branch --show-current) == main ]]"
+git -C "$eco/../remote-api" commit -q --allow-empty -m c2
+check "sync: exits 0 and updates the main branch checked out in the clone the link pointed to" 0 \
+  bash -c "cd '$eco' && ./bootstrap.sh > /dev/null \
+    && [[ \$(git -C ../clone-api rev-parse main) == \$(git -C ../remote-api rev-parse main) ]]"
+check_output "status: shows the branch of a repo folder that is a worktree" 0 "api +feature/x" \
+  bash -c "cd '$eco' && ./bootstrap.sh status"
+
+eco="$(setup_symlink worktree-symlink-fails)"
+check "symlink: exits non-zero when the worktree cannot be created" 1 \
+  bash -c "cd '$eco' && ./bootstrap.sh branch 'bad..name' api"
+check "symlink: the link is restored when the worktree cannot be created" 0 \
+  test -L "$eco/api"
 
 eco="$(setup branch-fetch-fails)"
 rm -rf "$eco/../remote-api"
@@ -207,7 +255,7 @@ check_output "branch: exits 1 without repos and without a change id" 1 "repos" \
 # --- sync -----------------------------------------------------------------
 
 eco="$(setup sync-background)"
-(cd "$eco" && ./bootstrap.sh branch feature/x api > /dev/null)
+git -C "$eco/api" switch -q -c feature/x
 git -C "$eco/../remote-api" commit -q --allow-empty -m c2
 check "sync: exits 0 and updates main without leaving the feature branch" 0 \
   bash -c "cd '$eco' && ./bootstrap.sh > /dev/null \

@@ -22,6 +22,10 @@ a change in `api/` is committed in `api/`, never in the ecosystem repo.
 - Read the `AGENTS.md` of the repo you are about to work in: its build, test and lint
   commands and conventions are there. This file only holds shared rules.
 - Work only in the repos the change needs. Do not modify others "while you are at it".
+- Modify a repo only from a worktree of its branch, never from its main checkout:
+  `./bootstrap.sh branch` creates it in `<repo>/.worktrees/<branch>`. If `<repo>` is a
+  symbolic link, do not write through it: `./bootstrap.sh branch` replaces it with the
+  worktree at that same path.
 
 ## System map
 
@@ -108,7 +112,9 @@ If a change is dropped, its proposal never reaches the main branch. Do not use
   PR in that repo that reverts it, following the proposal's rollback plan. No new proposal
   is needed: it goes back to the behaviour in `openspec/specs/`.
 - Delete the branches `spec/<id>` and `feature/<id>`, locally and on the remote, once their
-  PRs are closed. Anyone who wants to keep the work saves it locally first.
+  PRs are closed. Anyone who wants to keep the work saves it locally first. Git does not
+  delete a branch that is checked out in a worktree: remove the worktree first with
+  `git -C <repo> worktree remove .worktrees/<branch>`.
 
 ## TDD and verification (always)
 

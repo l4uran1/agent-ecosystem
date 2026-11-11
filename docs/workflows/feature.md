@@ -134,13 +134,14 @@ The agent does it right after opening the proposal's PR: it creates `feature/<id
 affected repo. The script checks that the proposal is published (`spec/<id>` exists on the
 remote) and takes the repos from the `(repo)` tags of the
 `tasks.md` on that branch, so nobody has to list them by hand. It starts each branch from
-the latest main branch on the remote, even if the repo is on another branch.
+the latest main branch on the remote, in a worktree `<repo>/.worktrees/feature/<id>`: the
+repo's main checkout is not touched, so several changes can be in progress at once.
 
 ```bash
 ./bootstrap.sh branch <id>
 #    repos of the change: api web
-# -> api: created feature/<id> from main
-# -> web: created feature/<id> from main
+# -> api: feature/<id> in api/.worktrees/feature/<id>
+# -> web: feature/<id> in web/.worktrees/feature/<id>
 ./bootstrap.sh status
 ```
 
@@ -152,7 +153,7 @@ Before the proposal's PR is open it creates nothing:
 
 If a task added later touches a repo that was not in the proposal, add it to `tasks.md` with
 its `(repo)` tag, push `spec/<id>` and run `./bootstrap.sh branch <id>` again: it creates the
-branch in that repo and only switches to it in the others.
+branch in that repo and only says where the existing worktree is in the others.
 
 ### Step 5 · Refine the plan
 
@@ -172,7 +173,8 @@ Do not implement anything yet or add anything outside the scope.
 
 Follow the TDD rules in AGENTS.md: first a failing test, check that it fails for the
 right reason, then the minimal implementation and the refactor.
-Commit each change in the repo the task belongs to, on branch feature/<id>.
+Commit each change in the repo the task belongs to, on branch feature/<id>, in its
+worktree <repo>/.worktrees/feature/<id>.
 Never mix several repos in one commit.
 Tick each task in tasks.md when it is done, and commit and push the progress on the
 ecosystem branch spec/<id>.
@@ -229,11 +231,11 @@ link to the proposal's PR, so the reviewer sees the whole change. Add each one t
 PRs" section of the proposal's PR description:
 
 ```bash
-cd <repo>
+cd <repo>/.worktrees/feature/<id>
 git push -u origin feature/<id>
 gh pr create --base <main> --title "<id>: <summary>" --body "Proposal: <link to the ecosystem PR>"
 # GitLab: glab mr create --target-branch <main> --title "<id>: <summary>" --description "Proposal: <link>"
-cd ..
+cd -
 ```
 
 ### Step 9 · Archive the spec
@@ -259,7 +261,7 @@ A person reviews the proposal's PR, now with the final proposal, the changes mad
 implementation and the archive, and merges it. Then clean up locally:
 
 ```bash
-git -C <repo> switch <main>
+git -C <repo> worktree remove .worktrees/feature/<id>
 git -C <repo> branch -d feature/<id>
 git switch <main>
 git branch -d spec/<id>
@@ -275,7 +277,7 @@ If the team drops a change, its proposal never reaches the main branch. Do not u
 | --- | --- | --- |
 | 1 | Close the proposal's PR without merging, with the reason in a comment | Git host |
 | 2 | Close the change's open code PRs without merging; revert the ones already merged, following the proposal's rollback plan | Git host |
-| 3 | Once the PRs are closed, delete `spec/<id>` and `feature/<id>`, locally and on the remote | `git push origin --delete <branch>` |
+| 3 | Once the PRs are closed, remove the worktrees and delete `spec/<id>` and `feature/<id>`, locally and on the remote | `git -C <repo> worktree remove .worktrees/<branch>`, `git branch -D <branch>` and `git push origin --delete <branch>` |
 
 The revert PRs need no new proposal: they go back to the behaviour already in
 `openspec/specs/`. Anyone who wants to keep the abandoned work saves it locally before the
