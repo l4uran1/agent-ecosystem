@@ -4,8 +4,11 @@
 # Usage:
 #   ./bootstrap.sh            clone/update the "core" repos
 #   ./bootstrap.sh --all      also include the "optional" repos
-#   ./bootstrap.sh status     show the branch and state of each repo
-#   ./bootstrap.sh branch X   create (from the main branch) or switch to branch X in the given repos:
+#   ./bootstrap.sh status     show the branch and state of each repo and of its worktrees
+#   ./bootstrap.sh branch X   create branch X (from the main branch, or the existing one) in a
+#                             worktree <repo>/.worktrees/X of each given repo, without touching
+#                             its main checkout. If <repo> is a symbolic link, it is replaced by
+#                             the worktree at that same path:
 #                             ./bootstrap.sh branch fix/login-loop api web
 #   ./bootstrap.sh branch ID  with the id of a published OpenSpec change and no repos: create
 #                             feature/ID (fix/<rest> for a fix-<rest> id) in the repos tagged
@@ -18,8 +21,9 @@
 #   ./bootstrap.sh tests      run every suite in tests/ (and shellcheck, if installed)
 #
 # Safe to run as often as you like: it never deletes anything, never switches your
-# branch and never touches your files. If a repo is on another branch, its main
-# branch is updated in the background without moving you off your branch.
+# branch and never touches your files (branch only replaces repo symbolic links). If a
+# repo is on another branch, its main branch is updated in the background without moving
+# you off your branch.
 
 set -euo pipefail
 
@@ -59,7 +63,7 @@ cmd_sync() {
   while read -r dir url group main; do
     want_group "$group" "$include_optional" || continue
 
-    if [[ ! -d "$dir/.git" ]]; then
+    if [[ ! -e "$dir/.git" ]]; then
       if [[ -e "$dir" ]]; then
         echo "!! $dir exists but is not a git repo. Check it manually."
         failed=$((failed + 1)); continue
@@ -100,6 +104,22 @@ cmd_sync() {
       continue
     fi
 
+    # On another branch, with the main branch checked out in another worktree (e.g. the clone
+    # a repo link pointed to): git cannot move it from here, so pull it there if it is clean.
+    local other
+    other="$(worktree_of "$dir" "$main")"
+    if [[ -n "$other" ]]; then
+      if [[ -n "$(git -C "$other" status --porcelain)" ]]; then
+        echo "   $dir: on '$branch'; $main is in $other with uncommitted changes, not updated"
+        skipped=$((skipped + 1))
+      elif git -C "$other" pull --quiet --ff-only origin "$main"; then
+        updated=$((updated + 1))
+      else
+        echo "!! $dir: could not fast-forward $main in $other"; failed=$((failed + 1))
+      fi
+      continue
+    fi
+
     # On another branch (clean or not): update the main branch in the background, without
     # switching branches or touching files. Only fast-forwards; otherwise git refuses.
     local before after
@@ -124,17 +144,52 @@ cmd_sync() {
   [[ $failed -eq 0 ]]
 }
 
+# "clean" or "uncommitted changes", for the checkout or worktree <dir>.
+work_state() {
+  if [[ -n "$(git -C "$1" status --porcelain)" ]]; then echo "uncommitted changes"; else echo "clean"; fi
+}
+
 cmd_status() {
   printf '%-20s %-34s %s\n' "REPO" "BRANCH" "STATE"
   while read -r dir _url _group _main; do
-    if [[ ! -d "$dir/.git" ]]; then
+    if [[ ! -e "$dir/.git" ]]; then
       printf '%-20s %-34s %s\n' "$dir" "-" "not cloned"; continue
     fi
-    local branch state
-    branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD)"
-    if [[ -n "$(git -C "$dir" status --porcelain)" ]]; then state="uncommitted changes"; else state="clean"; fi
-    printf '%-20s %-34s %s\n' "$dir" "$branch" "$state"
+    printf '%-20s %-34s %s\n' "$dir" "$(git -C "$dir" rev-parse --abbrev-ref HEAD)" "$(work_state "$dir")"
+    # Below it, the repo's other worktrees: path relative to the repo when inside it.
+    local top path branch
+    top="$(git -C "$dir" rev-parse --show-toplevel)"
+    while read -r path branch; do
+      [[ "$path" == "$top" ]] && continue
+      printf '  └ %-32s %-34s %s\n' "${path#"$top"/}" "${branch:-(detached)}" "$(work_state "$path")"
+    done < <(git -C "$dir" worktree list --porcelain \
+      | awk '/^worktree /{if (p) print p, b; p=substr($0, 10); b=""} /^branch /{b=substr($0, 19)} END{if (p) print p, b}')
   done < <(read_repos)
+}
+
+# Path of the worktree of <repo> that has <branch> checked out, or nothing.
+worktree_of() {
+  git -C "$1" worktree list --porcelain \
+    | awk -v b="branch refs/heads/$2" '/^worktree /{p=substr($0, 10)} $0 == b {print p}'
+}
+
+# Creates the worktree <path> of <repo> on <branch>: the existing one, or a new one from
+# origin/<main>.
+add_worktree() {
+  local repo="$1" path="$2" name="$3" main="$4"
+  if git -C "$repo" show-ref --verify --quiet "refs/heads/$name"; then
+    git -C "$repo" worktree add --quiet "$path" "$name"
+  else
+    git -C "$repo" worktree add --quiet --no-track -b "$name" "$path" "origin/$main"
+  fi
+}
+
+# Worktrees live in <repo>/.worktrees/: the repo ignores them without touching its .gitignore.
+ignore_worktrees() {
+  local exclude
+  exclude="$(git -C "$1" rev-parse --path-format=absolute --git-common-dir)/info/exclude"
+  mkdir -p "$(dirname "$exclude")"
+  grep -qxF '/.worktrees/' "$exclude" 2>/dev/null || echo '/.worktrees/' >> "$exclude"
 }
 
 cmd_branch() {
@@ -154,26 +209,34 @@ cmd_branch() {
 
   # Keeps going after a failure so the other repos still get the branch, but exits
   # non-zero if any repo failed: callers (people or agents) must not miss it.
-  local failed=0
+  local failed=0 dir main path link target
   for dir in "$@"; do
-    [[ -d "$dir/.git" ]] || { echo "!! $dir is not cloned"; failed=$((failed + 1)); continue; }
-    if git -C "$dir" show-ref --verify --quiet "refs/heads/$name"; then
-      if git -C "$dir" switch --quiet "$name"; then
-        echo "   $dir: switched to $name"
-      else
-        echo "!! $dir: could not switch to $name"; failed=$((failed + 1))
-      fi
+    [[ -e "$dir/.git" ]] || { echo "!! $dir is not cloned"; failed=$((failed + 1)); continue; }
+    path="$(worktree_of "$dir" "$name")"
+    if [[ -n "$path" ]]; then
+      echo "   $dir: $name is already in ${path#"$ROOT"/}"; continue
+    fi
+    # New branches always start from the latest main branch on the remote,
+    # even if the repo is on another branch or its local main branch is behind.
+    main="$(main_branch_of "$dir")"
+    git -C "$dir" fetch --quiet origin "$main" \
+      || { echo "!! $dir: could not fetch $main"; failed=$((failed + 1)); continue; }
+
+    # A linked repo is replaced by a worktree at the same path, so nothing is written to
+    # the clone the link points to. The link is put back if that fails.
+    if [[ -L "$dir" ]]; then
+      link="$(readlink "$dir")"; target="$(cd "$dir" && pwd -P)"; path="$dir"
+      rm "$dir"
+      add_worktree "$target" "$ROOT/$dir" "$name" "$main" || { ln -s "$link" "$dir"; path=""; }
     else
-      # New branches always start from the latest main branch on the remote,
-      # even if the repo is on another branch or its local main branch is behind.
-      local main
-      main="$(main_branch_of "$dir")"
-      if git -C "$dir" fetch --quiet origin "$main" \
-        && git -C "$dir" switch --quiet --no-track -c "$name" "origin/$main"; then
-        echo "-> $dir: created $name from $main"
-      else
-        echo "!! $dir: could not create $name from $main"; failed=$((failed + 1))
-      fi
+      path="$dir/.worktrees/$name"
+      ignore_worktrees "$dir"
+      add_worktree "$dir" "$ROOT/$path" "$name" "$main" || path=""
+    fi
+    if [[ -n "$path" ]]; then
+      echo "-> $dir: $name in $path"
+    else
+      echo "!! $dir: could not create the worktree of $name"; failed=$((failed + 1))
     fi
   done
 

@@ -29,7 +29,7 @@ sync: ## clone missing repos and update every main branch
 sync-all: ## same as sync, including optional repos
 	@./bootstrap.sh --all
 
-status: ## branch and state of every repo
+status: ## branch and state of every repo and of its worktrees
 	@./bootstrap.sh status
 
 branch: ## ID=<change-id>, or NAME=<branch> REPOS="<repo> ..."
