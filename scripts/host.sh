@@ -90,7 +90,8 @@ issue_get() {
 
 issue_set_body() {
   cd "$ROOT"
-  if [[ "$host" == gh ]]; then gh issue edit "$1" --body-file "$2"
+  # REST, not gh issue edit: older gh versions fail on it since Projects (classic) was retired.
+  if [[ "$host" == gh ]]; then gh api --method PATCH "repos/{owner}/{repo}/issues/$1" -F "body=@$2" > /dev/null
   else glab issue update "$1" --description-file "$2"
   fi
 }

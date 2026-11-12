@@ -85,7 +85,9 @@ expect "gh: issue-get with an unknown field fails" "!! Unknown field: owner (tit
 
 reset
 "$HOST" issue-set-body 42 "$TMP/body.md"
-called "gh: issue-set-body edits the body from the file" "^gh eco issue edit 42 --body-file $TMP/body.md$"
+# REST, not gh issue edit: older gh versions fail on it since Projects (classic) was retired.
+called "gh: issue-set-body edits the body from the file, through the REST API" \
+  "^gh eco api --method PATCH repos/\{owner\}/\{repo\}/issues/42 -F body=@$TMP/body.md$"
 "$HOST" issue-comment 42 "$TMP/body.md"
 called "gh: issue-comment comments from the file" "^gh eco issue comment 42 --body-file $TMP/body.md$"
 "$HOST" issue-close 42 completed
