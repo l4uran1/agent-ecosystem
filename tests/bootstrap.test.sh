@@ -111,6 +111,16 @@ git -C "$eco/api" branch -q fix/old main
 check "worktree: an existing branch gets a worktree instead of a new branch" 0 \
   bash -c "[[ \$(git -C '$eco/api/.worktrees/fix/old' branch --show-current) == fix/old ]]"
 
+eco="$(setup worktree-remote-branch)"
+git -C "$eco/../remote-api" switch -q -c feature/shared
+git -C "$eco/../remote-api" commit -q --allow-empty -m "pushed by someone else"
+git -C "$eco/../remote-api" switch -q main
+(cd "$eco" && ./bootstrap.sh branch feature/shared api > /dev/null 2>&1)
+check "worktree: a branch already on the remote starts from it, not from the main branch" 0 \
+  bash -c "[[ \$(git -C '$eco/api/.worktrees/feature/shared' rev-parse HEAD) == \$(git -C '$eco/../remote-api' rev-parse feature/shared) ]]"
+check "worktree: a branch taken from the remote tracks it, so pull and push work" 0 \
+  bash -c "[[ \$(git -C '$eco/api/.worktrees/feature/shared' rev-parse --abbrev-ref '@{upstream}') == origin/feature/shared ]]"
+
 # A repo folder that is a symbolic link to a clone kept elsewhere.
 setup_symlink() {
   local eco
@@ -352,6 +362,11 @@ check_output "doctor: exits 1 and names the file when a placeholder is left" 1 "
 check_absent "doctor: ignores placeholders inside HTML comments" "ignored in comments" \
   bash -c "cd '$eco' && ./bootstrap.sh doctor"
 
+eco="$(setup_filled doctor-notation)"
+printf '# Acme ecosystem\n\nWork in <repo>/.worktrees/<branch>.\n' > "$eco/AGENTS.md"
+check "doctor: <branch> is notation used by the rules, not a placeholder" 0 \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+
 eco="$(setup_filled doctor-no-openspec)"
 rm -rf "$eco/.claude/commands" "$eco/openspec/specs"
 check_output "doctor: exits 1 when openspec init has not been run" 1 "openspec init" \
@@ -377,6 +392,34 @@ mkdir -p "$eco/.cursor/commands" && echo x > "$eco/.cursor/commands/opsx-propose
 check_output "doctor: warns about ignored folders that are not service repos" 0 "\.cursor" \
   bash -c "cd '$eco' && ./bootstrap.sh doctor"
 check_absent "doctor: does not warn about service repos" "api/" \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+
+# A filled-in ecosystem repo with a remote, on main and up to date. Prints its folder.
+setup_filled_remote() {
+  local eco
+  eco="$(setup_filled "$1")"
+  git -C "$eco" add -A && git -C "$eco" commit -q -m init
+  git clone -q --bare "$eco" "$TMP/$1/remote-eco.git"
+  git -C "$eco" remote add origin "$TMP/$1/remote-eco.git"
+  git -C "$eco" fetch -q origin && git -C "$eco" branch -q -u origin/main
+  echo "$eco"
+}
+
+eco="$(setup_filled_remote doctor-eco-main)"
+check_absent "doctor: no warning when the ecosystem repo is on its main branch, up to date" "ecosystem repo is" \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+
+eco="$(setup_filled_remote doctor-eco-branch)"
+git -C "$eco" switch -q -c feature/docs
+check_output "doctor: warns when the ecosystem repo is not on its main branch" 0 "ecosystem repo is on feature/docs" \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+check_output "branch: warns when the ecosystem repo is not on its main branch" 0 "ecosystem repo is on feature/docs" \
+  bash -c "cd '$eco' && ./bootstrap.sh branch feature/x api 2>&1 | head -n 1; true"
+
+eco="$(setup_filled_remote doctor-eco-behind)"
+git clone -q "$eco/../remote-eco.git" "$eco/../other"
+git -C "$eco/../other" commit -q --allow-empty -m "merged later" && git -C "$eco/../other" push -q origin main
+check_output "doctor: warns when the ecosystem repo is behind its remote main branch" 0 "ecosystem repo is 1 commit\(s\) behind origin/main" \
   bash -c "cd '$eco' && ./bootstrap.sh doctor"
 
 echo
