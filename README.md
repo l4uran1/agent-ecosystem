@@ -85,6 +85,29 @@ Between `review` and `archive`, a person reviews and merges the code PRs. The fu
 in `AGENTS.md`.
 
 <details>
+<summary><b>Bugs, spec changes, sensitive areas and dropping a change</b></summary>
+
+- **A bug** follows the same commands with `TYPE=bug`: `make propose TYPE=bug IDEA="..."`.
+  The agent finds the root cause before proposing the fix, the issue gets the `bug` label and
+  the branch is `fix/<n>-<slug>`. The first test reproduces the bug. If the issue already
+  exists without the template, complete its body with `templates/spec.md` before
+  `make apply`.
+- **Sensitive areas and contracts between services.** If the spec touches a sensitive area
+  (`docs/product/sensitive-areas.md`) or a contract (`docs/system-map.md`), ask someone else
+  on the team to review the issue before `make apply`.
+- **The spec changes during the implementation.** The agent stops and asks you first. Then
+  it updates the issue body and explains the change in a comment, so the issue always says
+  what is being built.
+- **Picking a change up again**, yours or someone else's: run `make apply I=<n>` again. The
+  worktrees already there are reused, and a branch someone else pushed is the starting point.
+- **Dropping a change:** `make reject I=<n> REASON="..."` closes its open PRs and the issue
+  with the reason, and removes worktrees, branches and `.work/<n>/`. If a PR is already
+  merged, it stops: revert that PR first, following the spec's *Rollback*.
+- **Without the agent:** `make branch I=<n>` only creates the worktrees of the issue.
+
+</details>
+
+<details>
 <summary><b>Your agent: AGENT, METHOD and AGENT_REVIEWER</b></summary>
 
 Each person sets their tools in `local.mk`, at the ecosystem root. Git ignores it.
