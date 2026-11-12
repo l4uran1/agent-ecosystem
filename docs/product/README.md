@@ -16,6 +16,6 @@ not belong here.
 - Changed through PRs to the ecosystem repo, like everything else.
 - Confirmed facts only. Anything unknown is marked `TODO:` with the question, and resolved
   quickly: an agent should never make decisions based on a gap.
-- If a code change alters something described here, update the file in the same
-  ecosystem PR as its proposal.
+- If a code change alters something described here, `make archive` updates the file in a
+  PR to the ecosystem repo, which a person reviews.
 - Keep this folder private. Known risks describe exactly where your system is fragile.

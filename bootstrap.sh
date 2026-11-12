@@ -11,15 +11,33 @@
 #                             checkout. If <repo> is a symbolic link, it is replaced by the
 #                             worktree at that same path:
 #                             ./bootstrap.sh branch fix/login-loop api web
-#   ./bootstrap.sh branch ID  with the id of a published OpenSpec change and no repos: create
-#                             feature/ID (fix/<rest> for a fix-<rest> id) in the repos tagged
-#                             in its published tasks.md, only if its PR (spec/ID) is open
-#   ./bootstrap.sh check-spec ID
-#                             say whether the proposal ID is published, merged or archived; exit 1
-#                             if it is not on the ecosystem remote
+#   ./bootstrap.sh branch N   with the number of an issue of the ecosystem repo and no repos:
+#                             create feature/N-<slug> (fix/N-<slug> if it is labelled bug) in
+#                             the repos of the "Affected repos" section of its spec; <slug>
+#                             comes from its title
+#
+# The workflow (README.md). Each step starts your agent (AGENT and METHOD, see
+# scripts/agent.sh) with prompts/<step>.md; scripts/host.sh talks to the git host:
+#   ./bootstrap.sh explore [idea]
+#                             explore an idea, without code or issues
+#   ./bootstrap.sh propose <feature|bug> [idea]
+#                             write the spec and create its issue
+#   ./bootstrap.sh verify N   review the spec of issue N before building it, in a new session
+#   ./bootstrap.sh apply N    branch N, then implement it with TDD and open one PR per repo
+#   ./bootstrap.sh review N   review the implementation against the spec, in a new session
+#                             (creates the worktrees if needed). With AGENT_REVIEWER set to
+#                             another agent, that agent reviews first and yours checks its report
+#   ./bootstrap.sh archive N  once every PR is merged: your agent writes the final summary and
+#                             checks docs/; then the summary is published, the issue closed and
+#                             its worktrees, branches and temporary files removed
+#   ./bootstrap.sh reject N <reason>
+#                             drop issue N: close its open PRs with the reason, publish it on the
+#                             issue, close it as not planned and remove worktrees, branches and
+#                             temporary files (does nothing if a PR is already merged)
+#
 #   ./bootstrap.sh doctor     check the ecosystem repo is filled in and set up (placeholders, TODOs,
-#                             OpenSpec, system map age, files left out by .gitignore, and that the
-#                             ecosystem repo is on its main branch, up to date)
+#                             system map age, files left out by .gitignore, the git host CLI, and
+#                             that the ecosystem repo is on its main branch, up to date)
 #   ./bootstrap.sh tests      run every suite in tests/ (and shellcheck, if installed)
 #
 # Safe to run as often as you like: it never deletes anything, never switches your
@@ -225,16 +243,16 @@ cmd_branch() {
   local name="${1:?Give the branch name}"; shift
   warn_ecosystem
 
-  # Without repos, <name> is the id of a published change: its repos come from its tasks.
+  # Without repos, <name> is the number of an issue: the branch and the repos come from it.
   if [[ $# -eq 0 ]]; then
-    is_change_id "$name" \
-      || { echo "Give the affected repos, e.g.: branch $name api web, or the id of a published change"; exit 1; }
-    local repos
-    repos="$(change_repos "$name")" || exit 1
+    is_issue "$name" \
+      || { echo "Give the affected repos, e.g.: branch $name api web, or the number of an issue"; exit 1; }
+    local n="$name" out
+    out="$(issue_branch "$n")" || exit 1
+    name="${out%%$'\n'*}"
     # shellcheck disable=SC2086 # repo names have no spaces
-    set -- $repos
-    if [[ "$name" == fix-* ]]; then name="fix/${name#fix-}"; else name="feature/$name"; fi
-    echo "   repos of the change: $*"
+    set -- ${out#*$'\n'}
+    echo "   repos of issue #$n: $*"
   fi
 
   # Keeps going after a failure so the other repos still get the branch, but exits
@@ -283,85 +301,232 @@ ecosystem_branch() {
   if [[ -n "$head" ]]; then echo "${head#origin/}"; else echo "$DEFAULT_BRANCH"; fi
 }
 
-is_change_id() { [[ "$1" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; }
+is_issue() { [[ "$1" =~ ^[0-9]+$ ]]; }
 
-# Where the proposal <id> is on the ecosystem remote. Prints one of:
-#   "archived"                 the change is finished
-#   "merged origin/<main>"     its PR was merged before the change was built
-#   "published origin/spec/<id>"  its PR is open: spec/<id> exists on the remote. It is
-#                              merged at the end, after the code PRs and with the archive.
-# Returns 1 if the proposal is not on the remote, 2 if the remote cannot be fetched.
-spec_state() {
-  local id="$1" dir="openspec/changes/$1" main branch="spec/$1" archived
-  main="$(ecosystem_branch)"
-  git fetch --quiet origin "$main" || { echo "!! could not fetch $main from the remote" >&2; return 2; }
-
-  archived="$(git ls-tree -r --name-only "origin/$main" -- openspec/changes/archive/)"
-  if grep -qE "^openspec/changes/archive/[0-9]{4}-[0-9]{2}-[0-9]{2}-$id/proposal\.md$" <<< "$archived"; then
-    echo "archived"; return 0
-  fi
-  if git cat-file -e "origin/$main:$dir/proposal.md" 2>/dev/null; then
-    echo "merged origin/$main"; return 0
-  fi
-  # Asks the remote itself: a stale origin/spec/<id> left by an earlier fetch does not count
-  # once its PR is closed and the branch deleted.
-  if git ls-remote --exit-code origin "refs/heads/$branch" > /dev/null 2>&1 \
-    && git fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch" \
-    && git cat-file -e "origin/$branch:$dir/proposal.md" 2>/dev/null; then
-    echo "published origin/$branch"; return 0
-  fi
-  return 1
+# Branch-friendly form of an issue title: "Export orders to CSV!" -> export-orders-to-csv.
+slug() {
+  tr '[:upper:]' '[:lower:]' <<< "$1" | sed -E 's/[^a-z0-9]+/-/g; s/^-+//' | cut -c1-40 | sed -E 's/-+$//'
 }
 
-# A change can be implemented as soon as its proposal is published: its PR is open.
-cmd_check_spec() {
-  local id="${1:-}" state rc=0
-  is_change_id "$id" || { echo "Give the change id in kebab-case, e.g.: check-spec add-dark-mode"; return 1; }
+# Prints the branch of issue <n> and, on the next lines, the repos of the "Affected repos"
+# section of its spec, once each. Fails before anything is created if the issue does not
+# exist, its spec lists no repo, or names a repo that is not in repos.txt.
+issue_branch() {
+  local n="$1" title body labels type repos known repo unknown=""
+  title="$(scripts/host.sh issue-get "$n" title)" || return 1
+  body="$(scripts/host.sh issue-get "$n" body | tr -d '\r')" || return 1
+  labels="$(scripts/host.sh issue-get "$n" labels)" || return 1
 
-  state="$(spec_state "$id")" || rc=$?
-  case "$rc:${state%% *}" in
-    0:published) echo "$id: published (its PR is open on spec/$id): it can be implemented" ;;
-    0:merged)    echo "$id: merged into $(ecosystem_branch) before being built: it can be implemented" ;;
-    0:archived)  echo "$id: archived: the change is finished" ;;
-    2:*)         return 1 ;;
-    *)           echo "!! $id: not published. Push spec/$id with openspec/changes/$id/ and open its PR (spec: $id) before implementing."
-                 return 1 ;;
-  esac
-}
-
-# Prints the repos of the "(repo)" tags in the tasks of a published change, once each.
-# Tasks are read from the remote (spec/<id>, or the main branch if the proposal was merged
-# there), not the local copy: that is what reviewers see. Fails before anything is created
-# if the change is not published, is already archived, has no tags, or names a repo that
-# is not in repos.txt.
-change_repos() {
-  local id="$1" dir="openspec/changes/$1" state rc=0 ref tasks repos known repo unknown=""
-  state="$(spec_state "$id")" || rc=$?
-  case "$rc" in
-    0) ;;
-    2) return 1 ;;
-    *) cmd_check_spec "$id" >&2; return 1 ;;
-  esac
-  if [[ "$state" == archived ]]; then
-    echo "!! $id is already archived: the change is finished, open a new proposal to change it again" >&2
-    return 1
-  fi
-
-  ref="${state#* }"
-  tasks="$(git show "$ref:$dir/tasks.md" 2>/dev/null)" \
-    || { echo "!! $dir/tasks.md is not on $ref" >&2; return 1; }
-
-  repos="$(sed -nE 's/^[[:space:]]*- \[[ xX]\] [0-9.]+ \(([A-Za-z0-9._-]+)\).*/\1/p' <<< "$tasks" | sort -u)"
+  repos="$(awk '
+    /^##[[:space:]]+Affected repos/ { on = 1; next }
+    /^#/ { on = 0 }
+    on && /^[[:space:]]*[-*][[:space:]]+/ { sub(/^[[:space:]]*[-*][[:space:]]+/, ""); gsub(/`/, ""); print $1 }
+  ' <<< "$body" | sort -u)"
   [[ -n "$repos" ]] \
-    || { echo "!! $dir/tasks.md has no task tagged with its repo, e.g.: - [ ] 1.1 (repo) ..." >&2; return 1; }
+    || { echo "!! The spec of issue #$n lists no repo under \"## Affected repos\" (see templates/spec.md)" >&2; return 1; }
 
   known="$(read_repos | awk '{print $1}')"
   for repo in $repos; do
     grep -qxF "$repo" <<< "$known" || unknown="$unknown $repo"
   done
-  [[ -z "$unknown" ]] || { echo "!! $dir/tasks.md names repos that are not in repos.txt:$unknown" >&2; return 1; }
+  [[ -z "$unknown" ]] || { echo "!! The spec of issue #$n names repos that are not in repos.txt:$unknown" >&2; return 1; }
 
+  if grep -qxF bug <<< "$labels"; then type=fix; else type=feature; fi
+  echo "$type/$n-$(slug "$title")"
   echo "$repos"
+}
+
+# Leaves the branch of issue <n> in worktrees of its repos. Sets ISSUE_BRANCH, ISSUE_REPOS
+# (one per line) and ISSUE_WORKTREES (paths from the root, separated by spaces).
+checkout_issue() {
+  local out repo path
+  out="$(issue_branch "$1")" || return 1
+  ISSUE_BRANCH="${out%%$'\n'*}"; ISSUE_REPOS="${out#*$'\n'}"; ISSUE_WORKTREES=""
+  # shellcheck disable=SC2086 # repo names have no spaces
+  cmd_branch "$ISSUE_BRANCH" $ISSUE_REPOS || return 1
+  for repo in $ISSUE_REPOS; do
+    path="$(worktree_of "$repo" "$ISSUE_BRANCH")"
+    ISSUE_WORKTREES+="${ISSUE_WORKTREES:+ }${path#"$(cd "$ROOT" && pwd -P)"/}"
+  done
+}
+
+need_issue() {
+  is_issue "${2:-}" || { echo "Give the number of the issue, e.g.: $1 42" >&2; exit 1; }
+}
+
+cmd_explore() {
+  warn_ecosystem
+  exec scripts/agent.sh explore ${1:+"Idea: $1"}
+}
+
+# Drafts go to a folder of their own in .work/ until the issue has a number: the agent
+# renames it to .work/<n>/ once it creates the issue.
+cmd_propose() {
+  warn_ecosystem
+  local type="${1:-}" idea="${2:-}" draft
+  [[ "$type" == feature || "$type" == bug ]] || { echo "Give the type: propose <feature|bug> [idea]" >&2; exit 1; }
+  mkdir -p .work
+  draft="$(mktemp -d ".work/draft-$(date +%Y%m%d)-XXXX")"
+  exec scripts/agent.sh propose "Type: $type" "Draft: $draft" ${idea:+"Idea: $idea"}
+}
+
+cmd_verify() {
+  warn_ecosystem
+  need_issue verify "${1:-}"
+  exec scripts/agent.sh verify "$1"
+}
+
+cmd_apply() {
+  warn_ecosystem
+  need_issue apply "${1:-}"
+  checkout_issue "$1" || exit 1
+  mkdir -p ".work/$1"
+  exec scripts/agent.sh apply "$1" "Branch: $ISSUE_BRANCH" "Worktrees: $ISSUE_WORKTREES"
+}
+
+# Reviewed in a new session, from the worktrees (from the remote branch if someone else built
+# it) and its PRs, against the spec.
+cmd_review() {
+  warn_ecosystem
+  need_issue review "${1:-}"
+  local n="$1" repo prs context=()
+  checkout_issue "$n" || exit 1
+  context=("Branch: $ISSUE_BRANCH" "Worktrees: $ISSUE_WORKTREES")
+  for repo in $ISSUE_REPOS; do
+    prs="$(scripts/host.sh pr-list "$repo" "$ISSUE_BRANCH" 2> /dev/null | paste -sd ',' - | sed 's/,/, /g')" \
+      || prs="could not be listed"
+    context+=("PRs of $repo: ${prs:-none}")
+  done
+  mkdir -p ".work/$n"
+
+  # With AGENT_REVIEWER set to another agent, that agent reviews first and AGENT checks its report.
+  local reviewer="${AGENT_REVIEWER:-}" first
+  if [[ -n "$reviewer" && "$reviewer" != "${AGENT:-}" ]]; then
+    first=".work/$n/review-$reviewer.md"
+    rm -f "$first"
+    AGENT="$reviewer" scripts/agent.sh review "$n" "${context[@]}" "Report: $first" \
+      || echo "!! The review by $reviewer ended with an error"
+    if [[ -s "$first" ]]; then
+      context+=("First review: $first, by $reviewer")
+    else
+      echo "!! $reviewer left no report in $first: ${AGENT:-the main agent} reviews alone"
+    fi
+  fi
+  exec scripts/agent.sh review "$n" "${context[@]}" "Report: .work/$n/review.md"
+}
+
+# Only once every PR of the issue is merged: the agent writes the final summary (and opens the
+# docs/ PR if needed); then the summary is published, the issue closed and its worktrees,
+# branches and temporary files removed.
+cmd_archive() {
+  warn_ecosystem
+  need_issue archive "${1:-}"
+  local n="$1" out branch repos repo state _number url merged open problems=() summary
+  out="$(issue_branch "$n")" || exit 1
+  branch="${out%%$'\n'*}"; repos="${out#*$'\n'}"
+
+  for repo in $repos; do
+    merged=0; open=""
+    out="$(scripts/host.sh pr-list "$repo" "$branch")" || { problems+=("$repo: its PRs could not be listed"); continue; }
+    while read -r state _number url; do
+      case "$state" in
+        merged) merged=$((merged + 1)) ;;
+        open) open+="${open:+, }$url" ;;
+      esac
+    done <<< "$out"
+    if [[ -n "$open" ]]; then problems+=("$repo: PR not merged: $open")
+    elif [[ $merged -eq 0 ]]; then problems+=("$repo: no merged PR of $branch")
+    fi
+  done
+  if [[ ${#problems[@]} -gt 0 ]]; then
+    echo "!! #$n cannot be closed yet:" >&2
+    printf '   - %s\n' "${problems[@]}" >&2
+    exit 1
+  fi
+
+  summary=".work/$n/summary.md"
+  mkdir -p ".work/$n"
+  scripts/agent.sh archive "$n" "Branch: $branch" "Repos: ${repos//$'\n'/ }" "Summary: $summary" || true
+  [[ -s "$summary" ]] || { echo "!! No summary in $summary: #$n is not closed and nothing is removed" >&2; exit 1; }
+  scripts/host.sh issue-comment "$n" "$summary"
+  scripts/host.sh issue-close "$n" completed
+
+  for repo in $repos; do remove_issue_branch "$repo" "$branch"; done
+  rm -rf ".work/$n"
+  echo "-> #$n closed, with the summary published"
+}
+
+# Drops an issue: closes its open PRs with the reason, publishes it on the issue, closes it as
+# not planned and removes worktrees, branches and temporary files. Does nothing if a PR is
+# already merged: revert it first. If the spec lists no valid repo (a proposal left halfway),
+# only the issue is closed.
+cmd_reject() {
+  warn_ecosystem
+  need_issue reject "${1:-}"
+  local n="$1" reason="${2:-}" out branch="" repos="" repo state number url problems=() closes=() pr
+  [[ -n "$reason" ]] || { echo "Give the reason: reject $n \\"<reason>\\"" >&2; exit 1; }
+  if out="$(issue_branch "$n" 2> /dev/null)"; then
+    branch="${out%%$'\n'*}"; repos="${out#*$'\n'}"
+  else
+    echo "   The spec of #$n lists no valid repo: only the issue is closed"
+  fi
+
+  for repo in $repos; do
+    out="$(scripts/host.sh pr-list "$repo" "$branch")" || { problems+=("$repo: its PRs could not be listed"); continue; }
+    while read -r state number url; do
+      case "$state" in
+        merged) problems+=("$repo: $url is already merged; revert it with another PR (see the spec's Rollback)") ;;
+        open) closes+=("$repo $number") ;;
+      esac
+    done <<< "$out"
+  done
+  if [[ ${#problems[@]} -gt 0 ]]; then
+    echo "!! #$n cannot be rejected yet:" >&2
+    printf '   - %s\n' "${problems[@]}" >&2
+    exit 1
+  fi
+
+  mkdir -p ".work/$n"
+  printf '%s\n' "$reason" > ".work/$n/reason.md"
+  for pr in ${closes[@]+"${closes[@]}"}; do
+    repo="${pr% *}"; number="${pr#* }"
+    scripts/host.sh pr-close "$repo" "$number" ".work/$n/reason.md" \
+      || { echo "!! $repo: could not close PR $number; close it by hand and run reject again" >&2; exit 1; }
+    echo "-> $repo: closed PR $number"
+  done
+  scripts/host.sh issue-comment "$n" ".work/$n/reason.md"
+  scripts/host.sh issue-close "$n" not-planned
+
+  for repo in $repos; do remove_issue_branch "$repo" "$branch"; done
+  rm -rf ".work/$n"
+  echo "-> #$n rejected, with the reason published"
+}
+
+# Removes the worktree and the branch (local and remote) of an issue in a repo. A worktree
+# with uncommitted changes is kept, with its branch.
+remove_issue_branch() {
+  local repo="$1" branch="$2" path main linked=""
+  path="$(worktree_of "$repo" "$branch")"
+  main="$(git -C "$repo" worktree list --porcelain | sed -n '1s/^worktree //p')"
+  if [[ -n "$path" ]]; then
+    if [[ -n "$(git -C "$path" status --porcelain)" ]]; then
+      echo "   $repo: $path has uncommitted changes; it is kept, with its branch"; return
+    fi
+    [[ "$path" == "$(cd "$repo" && pwd -P)" ]] && linked=yes
+    if ! git -C "$main" worktree remove "$path" 2> /dev/null; then
+      # Containers leave files owned by root (caches, reports) that only root can delete.
+      echo "!! $repo: could not remove $path (files owned by another user, e.g. root from a container?)."
+      echo "   Remove it with: sudo rm -rf '$path' && git -C '$main' worktree prune"
+      return
+    fi
+    # It was a linked repo: it becomes the link again.
+    [[ -z "$linked" ]] || ln -s "$main" "$repo"
+  fi
+  git -C "$main" branch -D "$branch" > /dev/null 2>&1 || true
+  if git -C "$main" ls-remote --exit-code --heads origin "$branch" > /dev/null 2>&1; then
+    git -C "$main" push --quiet origin --delete "$branch"
+  fi
+  echo "-> $repo: removed the worktree and the branch $branch"
 }
 
 # Files a team fills in when adopting the template.
@@ -373,8 +538,8 @@ context_files() {
 }
 
 # Prints "P file:line: <token>" for each unfilled placeholder and "T file:line: text" for
-# each TODO, ignoring HTML comments. <id>, <change-id>, <repo>, <branch> and
-# <short-description> are notation used by the rules themselves, not placeholders.
+# each TODO, ignoring HTML comments. <id>, <n>, <slug>, <repo>, <branch>, <step>, <reason>
+# and <short-description> are notation used by the rules themselves, not placeholders.
 scan_context() {
   awk '
     FNR == 1 { in_comment = 0 }
@@ -392,7 +557,7 @@ scan_context() {
       if (text ~ /TODO:/) print "T " FILENAME ":" FNR ": " text
       while (match(text, /<[^<>]+>/)) {
         token = substr(text, RSTART, RLENGTH)
-        if (token !~ /^<(id|change-id|repo|branch|short-description)>$/) print "P " FILENAME ":" FNR ": " token
+        if (token !~ /^<(id|n|slug|repo|branch|step|reason|short-description)>$/) print "P " FILENAME ":" FNR ": " token
         text = substr(text, RSTART + RLENGTH)
       }
     }' "$@"
@@ -426,19 +591,6 @@ cmd_doctor() {
     done
   fi
 
-  # OpenSpec must be initialised: its folders exist and it generated commands or skills
-  # for at least one agent (.claude/, .cursor/, .agents/, .github/...).
-  local generated=""
-  for f in .[!.]*/; do
-    [[ -d "$f" && "$f" != .git/ ]] || continue
-    generated="$(find "$f" -maxdepth 3 \( -name '*opsx*' -o -name 'openspec-*' \) -print 2>/dev/null | head -n 1)"
-    [[ -n "$generated" ]] && break
-  done
-  if [[ ! -d openspec/specs || ! -d openspec/changes || -z "$generated" ]]; then
-    echo "!! OpenSpec is not set up for any agent: run openspec init (SETUP.md, step 3)"
-    errors=$((errors + 1))
-  fi
-
   # The system map must be reviewed regularly: an outdated map misleads the agent.
   local max_age="${MAP_MAX_AGE_DAYS:-90}" reviewed epoch age
   if [[ -f docs/system-map.md ]]; then
@@ -459,13 +611,22 @@ cmd_doctor() {
   warning="$(ecosystem_warning)"
   if [[ -n "$warning" ]]; then echo "   $warning"; warnings=$((warnings + 1)); fi
 
+  # The workflow commands need the git host CLI, logged in.
+  if ! warning="$(scripts/host.sh check-auth 2>&1)"; then
+    echo "   ${warning#!! }: the workflow commands need it"; warnings=$((warnings + 1))
+  fi
+
   # Anything ignored that is not a service repo never reaches the rest of the team.
   if git rev-parse --git-dir > /dev/null 2>&1; then
     local services path top
     services=" $(read_repos | awk '{printf "%s ", $1}')"
     while read -r path; do
       top="${path%%/*}"
-      [[ "$services" == *" $top "* || "$path" == .claude/settings.local.json ]] && continue
+      [[ "$services" == *" $top "* ]] && continue
+      # Personal settings and temporary files, ignored on purpose.
+      case "$path" in
+        .claude/settings.local.json|local.mk|.work/*|.worktrees/*|docs/superpowers/*|openspec/changes/*) continue ;;
+      esac
       echo "   $path: ignored by .gitignore; if the team needs it, add it with '!' (see .gitignore)"
       warnings=$((warnings + 1))
     done < <(git status --ignored --porcelain | sed -n 's/^!! //p')
@@ -485,7 +646,7 @@ cmd_tests() {
     [[ $code -ne 0 ]] || code=$status
   done
   if command -v shellcheck > /dev/null; then
-    shellcheck "$ROOT/bootstrap.sh" "$ROOT"/tests/*.test.sh || { [[ $code -ne 0 ]] || code=1; }
+    shellcheck "$ROOT/bootstrap.sh" "$ROOT"/scripts/*.sh "$ROOT"/tests/*.test.sh || { [[ $code -ne 0 ]] || code=1; }
   else
     echo "   shellcheck is not installed: lint skipped"
   fi
@@ -495,7 +656,13 @@ cmd_tests() {
 case "${1:-}" in
   status) cmd_status ;;
   branch) shift; cmd_branch "$@" ;;
-  check-spec) shift; cmd_check_spec "$@" ;;
+  explore) shift; cmd_explore "$@" ;;
+  propose) shift; cmd_propose "$@" ;;
+  verify) shift; cmd_verify "$@" ;;
+  apply) shift; cmd_apply "$@" ;;
+  review) shift; cmd_review "$@" ;;
+  archive) shift; cmd_archive "$@" ;;
+  reject) shift; cmd_reject "$@" ;;
   doctor) cmd_doctor ;;
   tests) cmd_tests ;;
   ""|--all) cmd_sync "${1:-}" ;;

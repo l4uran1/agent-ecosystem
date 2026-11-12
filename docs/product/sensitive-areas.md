@@ -3,12 +3,12 @@
 <!--
   TEMPLATE: one section per area, following the example. Delete the example and these
   comments. Keep the list short: if everything is sensitive, nothing is.
-  This is the only list of sensitive areas: AGENTS.md and openspec/config.yaml point here.
+  This is the only list of sensitive areas: AGENTS.md and the prompts point here.
 -->
 
 A mistake in these areas directly hurts customers or their trust in the product.
-**Any change in them requires an OpenSpec proposal**, however small it looks, and the
-proposal must explain the risk for users.
+**Any change in them needs its spec reviewed by someone else on the team before it is
+built**, however small it looks, and the spec must explain the risk for users.
 
 ## <Area name>
 
@@ -30,6 +30,6 @@ proposal must explain the risk for users.
 ## Known risks
 
 Fragile spots found in the system that are not covered by tests. If a change touches
-them, the proposal must say how it deals with them.
+them, the spec must say how it deals with them.
 
 - **<Short name>.** <What is fragile, what would break it, and the proposed fix if any>.
