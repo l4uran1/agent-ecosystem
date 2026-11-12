@@ -1,8 +1,8 @@
 # The ecosystem repo only versions its own files. Everything else (the service repos)
 # is ignored without listing it: adding a repo never requires touching this file.
 #
-# If a tool creates a new file or folder at the root (e.g. `openspec init` for another
-# agent), add it here with "!" or it will never reach the rest of the team.
+# If a tool creates a new file or folder at the root (e.g. `openspec init` for an agent),
+# add it here with "!" or it will never reach the rest of the team.
 # To check what is being left out: git status --ignored
 
 /*
@@ -20,10 +20,12 @@
 !/repos.txt
 !/docs/
 !/openspec/
+!/prompts/
+!/scripts/
 !/templates/
 !/tests/
 
-# Agent configuration (add the folders `openspec init` creates for your agents)
+# Agent configuration (add the folders your agents and `openspec init` create)
 !/AGENTS.md
 !/CLAUDE.md
 !/.claude/
@@ -33,3 +35,9 @@
 
 # Personal Claude Code settings: never shared
 /.claude/settings.local.json
+
+# Temporary files of the workflow (README.md): never committed. .work/, .worktrees/ and
+# local.mk (your AGENT and METHOD) are already left out by /*; these are inside versioned
+# folders. Superpowers and OpenSpec write their drafts there.
+/docs/superpowers/
+/openspec/changes/

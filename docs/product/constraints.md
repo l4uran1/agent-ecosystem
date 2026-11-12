@@ -5,7 +5,7 @@
   build. Delete the example and these comments.
 -->
 
-Limits that do not depend on us. A proposal that clashes with them is not viable, even if
+Limits that do not depend on us. A spec that clashes with them is not viable, even if
 it looks technically right.
 
 ## <Platform, provider or regulation>

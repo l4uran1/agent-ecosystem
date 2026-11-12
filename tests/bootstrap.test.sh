@@ -153,114 +153,279 @@ rm -rf "$eco/../remote-api"
 check "branch: exits non-zero when the remote cannot be fetched" 1 \
   bash -c "cd '$eco' && ./bootstrap.sh branch feature/x api web"
 
-# --- branch <change-id> ---------------------------------------------------
+# --- the workflow, with issues ------------------------------------------------
+# scripts/host.sh and scripts/agent.sh are fakes: the host answers from .fake/ and logs every
+# call, and the agent logs its arguments and, if asked, writes the file a step expects.
 
-# An ecosystem repo with two cloned repos (api, web) whose remote main branch holds the
-# change add-dark-mode, with a task tagged (api) only. Prints its folder.
-setup_change() {
-  local eco remote
-  eco="$(setup "$1")"; remote="$TMP/$1/remote-eco"
-  git init -q -b main "$remote"
-  mkdir -p "$remote/openspec/changes/add-dark-mode"
-  echo proposal > "$remote/openspec/changes/add-dark-mode/proposal.md"
-  printf '## 1. API\n\n- [ ] 1.1 (api) Add the endpoint\n- [x] 1.2 (api) Run tests, lint and build\n' \
-    > "$remote/openspec/changes/add-dark-mode/tasks.md"
-  git -C "$remote" add . && git -C "$remote" commit -q -m proposal
-  git -C "$eco" init -q -b main
-  git -C "$eco" remote add origin "$remote"
-  git -C "$eco" fetch -q origin && git -C "$eco" reset -q --hard origin/main
+# An ecosystem repo with two cloned repos (api, web) and the fakes. Prints its folder.
+setup_flow() {
+  add_fakes "$(setup "$1")"
+}
+
+# Adds the fake host.sh and agent.sh to the ecosystem folder <eco>. Prints the folder.
+add_fakes() {
+  local eco="$1"
+  mkdir -p "$eco/scripts" "$eco/.fake"
+  cat > "$eco/scripts/host.sh" <<'EOF'
+#!/usr/bin/env bash
+F="$(cd "$(dirname "$0")/.." && pwd)/.fake"
+echo "$*" >> "$F/host-calls"
+case "$1" in
+  issue-get)
+    [[ -d "$F/issues/$2" ]] || { echo "!! no issue $2" >&2; exit 1; }
+    cat "$F/issues/$2/$3" 2> /dev/null || true ;;
+  pr-list) cat "$F/prs/$2/${3//\//_}" 2> /dev/null || true ;;
+  pr-close) echo "  comment: $(cat "$4")" >> "$F/host-calls" ;;
+  issue-comment) echo "  comment: $(cat "$3")" >> "$F/host-calls" ;;
+  check-auth) [[ ! -f "$F/no-auth" ]] || { echo "!! gh is not logged in" >&2; exit 1; } ;;
+esac
+EOF
+  cat > "$eco/scripts/agent.sh" <<'EOF'
+#!/usr/bin/env bash
+F="$(cd "$(dirname "$0")/.." && pwd)/.fake"
+echo "AGENT=${AGENT:-} $*" >> "$F/agent-calls"
+for a in "$@"; do
+  case "$a" in
+    "Summary: "*) [[ ! -f "$F/write-summary" ]] || echo "h2. Built" > "${a#Summary: }" ;;
+    "Report: "*) [[ ! -f "$F/write-report" ]] || echo "All good" > "${a#Report: }" ;;
+  esac
+done
+EOF
+  chmod +x "$eco/scripts/host.sh" "$eco/scripts/agent.sh"
   echo "$eco"
 }
 
-# add_change <eco> <id> <tasks.md content> [archive]: merges a change into the remote main
-# branch, under archive/ if the fourth argument is given.
-add_change() {
-  local remote="$1/../remote-eco" dir="openspec/changes/$2"
-  [[ -n "${4:-}" ]] && dir="openspec/changes/archive/2026-01-15-$2"
-  mkdir -p "$remote/$dir"
-  echo proposal > "$remote/$dir/proposal.md"
-  printf '%s\n' "$3" > "$remote/$dir/tasks.md"
-  git -C "$remote" add . && git -C "$remote" commit -q -m "$2"
+# issue <eco> <n> <title> <repo...>: an issue whose spec lists the repos. LABELS sets its labels.
+issue() {
+  local d="$1/.fake/issues/$2" title="$3"; shift 3
+  mkdir -p "$d"
+  echo "$title" > "$d/title"
+  { printf '## Context\nWhy.\n\n## Affected repos\n'
+    printf -- '- %s\n' "$@"
+    printf '\n## Acceptance criteria\n1. Given a user, when they export, then they get a CSV\n'
+  } > "$d/body"
+  printf '%s\n' ${LABELS:-} > "$d/labels"
 }
 
-# publish_change <eco> <id> <tasks.md content>: pushes a proposal to the branch spec/<id> of
-# the remote, as if its PR were open, without merging it.
-publish_change() {
-  local remote="$1/../remote-eco" dir="openspec/changes/$2"
-  git -C "$remote" switch -q -c "spec/$2" main
-  mkdir -p "$remote/$dir"
-  echo proposal > "$remote/$dir/proposal.md"
-  printf '%s\n' "$3" > "$remote/$dir/tasks.md"
-  git -C "$remote" add . && git -C "$remote" commit -q -m "spec: $2"
-  git -C "$remote" switch -q main
+# prs <eco> <repo> <branch> <lines>: the PRs the host lists for that branch.
+prs() { mkdir -p "$1/.fake/prs/$2"; printf '%s\n' "$4" > "$1/.fake/prs/$2/${3//\//_}"; }
+
+# logged <description> <eco> <host-calls|agent-calls> <regex>
+logged() {
+  if grep -qE -- "$4" "$2/.fake/$3" 2> /dev/null; then pass "$1"
+  else fail "$1" "no line of $3 matches /$4/" "$(cat "$2/.fake/$3" 2> /dev/null)"; fi
+}
+
+# not_logged <description> <eco> <host-calls|agent-calls> <regex>
+not_logged() {
+  if grep -qE -- "$4" "$2/.fake/$3" 2> /dev/null; then fail "$1" "a line of $3 matches /$4/" "$(cat "$2/.fake/$3")"
+  else pass "$1"; fi
 }
 
 has_branch() { git -C "$1" show-ref --verify --quiet "refs/heads/$2"; }
 
-eco="$(setup_change change-ok)"
-check_output "branch <id>: exits 0 and names the repos of a change merged into main" 0 "api" \
-  bash -c "cd '$eco' && ./bootstrap.sh branch add-dark-mode"
-check "branch <id>: creates feature/<id> in the repos tagged in tasks.md" 0 \
-  has_branch "$eco/api" feature/add-dark-mode
-check "branch <id>: leaves the repos that are not tagged alone" 1 \
-  has_branch "$eco/web" feature/add-dark-mode
+# branch <n>
 
-eco="$(setup_change change-published)"
-publish_change "$eco" add-export "$(printf -- '- [ ] 1.1 (web) Add the button')"
-check_output "branch <id>: exits 0 when the proposal is published (its PR is open)" 0 "web" \
-  bash -c "cd '$eco' && ./bootstrap.sh branch add-export"
-check "branch <id>: creates feature/<id> from the tasks on spec/<id>" 0 \
-  has_branch "$eco/web" feature/add-export
-git -C "$eco/../remote-eco" switch -q spec/add-export
-printf -- '- [ ] 1.1 (web) Add the button\n- [ ] 2.1 (api) Added during implementation\n' \
-  > "$eco/../remote-eco/openspec/changes/add-export/tasks.md"
-git -C "$eco/../remote-eco" commit -q -am "spec: add-export, api task" && git -C "$eco/../remote-eco" switch -q main
-(cd "$eco" && ./bootstrap.sh branch add-export > /dev/null 2>&1)
-check "branch <id>: run again, creates the branch in a repo added to the tasks later" 0 \
-  has_branch "$eco/api" feature/add-export
+eco="$(setup_flow issue-branch)"
+issue "$eco" 42 "Export orders to CSV!" api
+check_output "branch <n>: exits 0 and names the repos of the issue" 0 "repos of issue #42: api" \
+  bash -c "cd '$eco' && ./bootstrap.sh branch 42"
+check "branch <n>: creates feature/<n>-<slug of the title> in the repos of Affected repos" 0 \
+  has_branch "$eco/api" feature/42-export-orders-to-csv
+check "branch <n>: leaves the repos that are not listed alone" 1 \
+  has_branch "$eco/web" feature/42-export-orders-to-csv
 
-eco="$(setup_change change-not-published)"
-mkdir -p "$eco/openspec/changes/local-only"
-echo draft > "$eco/openspec/changes/local-only/proposal.md"
-printf -- '- [ ] 1.1 (api) Something\n' > "$eco/openspec/changes/local-only/tasks.md"
-check_output "branch <id>: exits 1 when the proposal is not published" 1 "not published" \
-  bash -c "cd '$eco' && ./bootstrap.sh branch local-only"
-check "branch <id>: creates no branch when the proposal is not published" 1 \
-  has_branch "$eco/api" feature/local-only
+eco="$(setup_flow issue-branch-bug)"
+LABELS="ui bug" issue "$eco" 7 "Login loops forever" web
+(cd "$eco" && ./bootstrap.sh branch 7 > /dev/null 2>&1)
+check "branch <n>: an issue labelled bug gets fix/<n>-<slug>" 0 \
+  has_branch "$eco/web" fix/7-login-loops-forever
 
-eco="$(setup_change change-remote-tasks)"
-printf -- '- [ ] 1.1 (api) Add the endpoint\n- [ ] 1.2 (web) Added locally\n' \
-  > "$eco/openspec/changes/add-dark-mode/tasks.md"
-(cd "$eco" && ./bootstrap.sh branch add-dark-mode > /dev/null 2>&1)
-check "branch <id>: reads the repos from the published tasks.md, not the local copy" 1 \
-  has_branch "$eco/web" feature/add-dark-mode
+eco="$(setup_flow issue-branch-crlf)"
+issue "$eco" 8 "Edited on the web" api web
+sed -i.bak 's/$/\r/' "$eco/.fake/issues/8/body" && rm "$eco/.fake/issues/8/body.bak"
+(cd "$eco" && ./bootstrap.sh branch 8 > /dev/null 2>&1)
+check "branch <n>: reads a spec with Windows line ends (edited in the browser)" 0 \
+  has_branch "$eco/web" feature/8-edited-on-the-web
 
-eco="$(setup_change change-unknown-repo)"
-add_change "$eco" add-ghost "$(printf -- '- [ ] 1.1 (api) One\n- [ ] 2.1 (ghost) Two')"
-check_output "branch <id>: exits 1 when tasks.md names a repo not in repos.txt" 1 "repos.txt.*ghost" \
-  bash -c "cd '$eco' && ./bootstrap.sh branch add-ghost"
-check "branch <id>: creates no branch when a repo is unknown" 1 \
-  has_branch "$eco/api" feature/add-ghost
+eco="$(setup_flow issue-branch-unknown)"
+issue "$eco" 9 "Ghost" api ghost
+check_output "branch <n>: exits 1 when Affected repos names a repo not in repos.txt" 1 "repos.txt.*ghost" \
+  bash -c "cd '$eco' && ./bootstrap.sh branch 9"
+check "branch <n>: creates no branch when a repo is unknown" 1 has_branch "$eco/api" feature/9-ghost
 
-eco="$(setup_change change-no-tags)"
-add_change "$eco" no-tags "- [ ] 1.1 Add the endpoint"
-check_output "branch <id>: exits 1 when no task names its repo" 1 "\(repo\)" \
-  bash -c "cd '$eco' && ./bootstrap.sh branch no-tags"
-
-eco="$(setup_change change-archived)"
-add_change "$eco" old-change "- [x] 1.1 (api) Done" archive
-check_output "branch <id>: exits 1 when the change is already archived" 1 "archived" \
-  bash -c "cd '$eco' && ./bootstrap.sh branch old-change"
-
-eco="$(setup_change change-fix)"
-add_change "$eco" fix-login-loop "- [ ] 1.1 (web) Reproduce the loop"
-(cd "$eco" && ./bootstrap.sh branch fix-login-loop > /dev/null 2>&1)
-check "branch <id>: a fix- change gets fix/<rest> instead of feature/<id>" 0 \
-  has_branch "$eco/web" fix/login-loop
+eco="$(setup_flow issue-branch-no-repos)"
+issue "$eco" 10 "No repos"
+check_output "branch <n>: exits 1 when the spec lists no repo" 1 "Affected repos" \
+  bash -c "cd '$eco' && ./bootstrap.sh branch 10"
+check_output "branch <n>: exits 1 when the issue does not exist" 1 "no issue 11" \
+  bash -c "cd '$eco' && ./bootstrap.sh branch 11"
 
 eco="$(setup branch-no-repos)"
-check_output "branch: exits 1 without repos and without a change id" 1 "repos" \
+check_output "branch: exits 1 without repos and without an issue number" 1 "repos" \
   bash -c "cd '$eco' && ./bootstrap.sh branch feature/x"
+
+# explore, propose, verify
+
+eco="$(setup_flow flow-explore)"
+(cd "$eco" && ./bootstrap.sh explore "CSV export" > /dev/null 2>&1)
+logged "explore: starts the agent with the idea" "$eco" agent-calls "^AGENT= explore Idea: CSV export$"
+
+eco="$(setup_flow flow-propose)"
+(cd "$eco" && ./bootstrap.sh propose bug "Login loops" > /dev/null 2>&1)
+logged "propose: starts the agent with the type, a draft folder in .work/ and the idea" "$eco" agent-calls \
+  "^AGENT= propose Type: bug Draft: \.work/draft-[0-9]{8}-[A-Za-z0-9]{4} Idea: Login loops$"
+check "propose: creates the draft folder" 0 bash -c "ls -d '$eco'/.work/draft-*/"
+check_output "propose: exits 1 with an unknown type" 1 "feature.bug" \
+  bash -c "cd '$eco' && ./bootstrap.sh propose story"
+
+eco="$(setup_flow flow-verify)"
+issue "$eco" 42 "Export orders" api
+(cd "$eco" && ./bootstrap.sh verify 42 > /dev/null 2>&1)
+logged "verify: starts the agent with the issue" "$eco" agent-calls "^AGENT= verify 42$"
+check_output "verify: exits 1 without an issue number" 1 "verify 42" \
+  bash -c "cd '$eco' && ./bootstrap.sh verify abc"
+
+# apply
+
+eco="$(setup_flow flow-apply)"
+issue "$eco" 42 "Export orders" api web
+(cd "$eco" && ./bootstrap.sh apply 42 > /dev/null 2>&1)
+check "apply: creates the worktrees of the issue" 0 \
+  test -d "$eco/web/.worktrees/feature/42-export-orders"
+logged "apply: starts the agent with the issue, its branch and its worktrees" "$eco" agent-calls \
+  "^AGENT= apply 42 Branch: feature/42-export-orders Worktrees: api/\.worktrees/feature/42-export-orders web/\.worktrees/feature/42-export-orders$"
+check "apply: creates .work/<n>/ for the temporary documents" 0 test -d "$eco/.work/42"
+
+eco="$(setup_flow flow-apply-no-repos)"
+issue "$eco" 43 "No repos"
+check "apply: exits 1 when the spec lists no repo" 1 bash -c "cd '$eco' && ./bootstrap.sh apply 43"
+not_logged "apply: does not start the agent when the spec lists no repo" "$eco" agent-calls "apply"
+
+# review
+
+eco="$(setup_flow flow-review)"
+issue "$eco" 42 "Export orders" api
+prs "$eco" api feature/42-export-orders "open 7 https://host/acme/api/pull/7"
+(cd "$eco" && AGENT=claude ./bootstrap.sh review 42 > /dev/null 2>&1)
+logged "review: starts the agent with the worktrees, the PRs and the path of its report" "$eco" agent-calls \
+  "^AGENT=claude review 42 Branch: feature/42-export-orders Worktrees: api/\.worktrees/feature/42-export-orders PRs of api: open 7 https://host/acme/api/pull/7 Report: \.work/42/review\.md$"
+check_output "review: with AGENT_REVIEWER unset, only one agent reviews" 0 "^1$" \
+  bash -c "grep -c review '$eco/.fake/agent-calls'"
+
+eco="$(setup_flow flow-review-two)"
+issue "$eco" 42 "Export orders" api
+touch "$eco/.fake/write-report"
+(cd "$eco" && AGENT=claude AGENT_REVIEWER=codex ./bootstrap.sh review 42 > /dev/null 2>&1)
+logged "review: AGENT_REVIEWER reviews first, with its own report" "$eco" agent-calls \
+  "^AGENT=codex review 42 .* Report: \.work/42/review-codex\.md$"
+logged "review: then AGENT reviews, with the first report" "$eco" agent-calls \
+  "^AGENT=claude review 42 .* First review: \.work/42/review-codex\.md, by codex Report: \.work/42/review\.md$"
+
+eco="$(setup_flow flow-review-two-no-report)"
+issue "$eco" 42 "Export orders" api
+check_output "review: says so when AGENT_REVIEWER leaves no report" 0 "codex left no report" \
+  bash -c "cd '$eco' && AGENT=claude AGENT_REVIEWER=codex ./bootstrap.sh review 42"
+not_logged "review: without a first report, AGENT reviews alone" "$eco" agent-calls "First review"
+
+# archive
+
+# An issue implemented in api: worktree, branch pushed to the remote, and .work/42/.
+setup_built() {
+  local eco
+  eco="$(setup_flow "$1")"
+  issue "$eco" 42 "Export orders" api
+  (cd "$eco" && ./bootstrap.sh apply 42 > /dev/null 2>&1)
+  git -C "$eco/api/.worktrees/feature/42-export-orders" push -q origin HEAD 2> /dev/null
+  rm "$eco/.fake/agent-calls"
+  echo "$eco"
+}
+
+eco="$(setup_built archive-open-pr)"
+prs "$eco" api feature/42-export-orders $'merged 6 https://host/pull/6\nopen 7 https://host/pull/7'
+check_output "archive: exits 1 and names the PR when one is still open" 1 "api: PR not merged: https://host/pull/7" \
+  bash -c "cd '$eco' && ./bootstrap.sh archive 42"
+not_logged "archive: does not start the agent while a PR is open" "$eco" agent-calls "archive"
+
+eco="$(setup_built archive-no-merged)"
+check_output "archive: exits 1 when a repo has no merged PR of the branch" 1 "api: no merged PR of feature/42-export-orders" \
+  bash -c "cd '$eco' && ./bootstrap.sh archive 42"
+
+eco="$(setup_built archive-no-summary)"
+prs "$eco" api feature/42-export-orders "merged 7 https://host/pull/7"
+check_output "archive: exits 1 when the agent leaves no summary" 1 "No summary" \
+  bash -c "cd '$eco' && ./bootstrap.sh archive 42"
+not_logged "archive: without a summary the issue stays open" "$eco" host-calls "issue-close"
+check "archive: without a summary the worktree is kept" 0 test -d "$eco/api/.worktrees/feature/42-export-orders"
+
+eco="$(setup_built archive-ok)"
+prs "$eco" api feature/42-export-orders "merged 7 https://host/pull/7"
+touch "$eco/.fake/write-summary"
+check_output "archive: exits 0 and says the issue is closed" 0 "#42 closed" \
+  bash -c "cd '$eco' && ./bootstrap.sh archive 42"
+logged "archive: starts the agent with the branch, the repos and the path of the summary" "$eco" agent-calls \
+  "^AGENT= archive 42 Branch: feature/42-export-orders Repos: api Summary: \.work/42/summary\.md$"
+logged "archive: publishes the summary on the issue" "$eco" host-calls "^  comment: h2. Built$"
+logged "archive: closes the issue as completed" "$eco" host-calls "^issue-close 42 completed$"
+check "archive: removes the worktree" 1 test -d "$eco/api/.worktrees/feature/42-export-orders"
+check "archive: deletes the local branch" 1 has_branch "$eco/api" feature/42-export-orders
+check "archive: deletes the remote branch" 1 has_branch "$eco/../remote-api" feature/42-export-orders
+check "archive: deletes .work/<n>/" 1 test -d "$eco/.work/42"
+
+eco="$(setup_built archive-dirty)"
+prs "$eco" api feature/42-export-orders "merged 7 https://host/pull/7"
+touch "$eco/.fake/write-summary"
+echo wip > "$eco/api/.worktrees/feature/42-export-orders/wip"
+check_output "archive: keeps a worktree with uncommitted changes, and says so" 0 "uncommitted changes" \
+  bash -c "cd '$eco' && ./bootstrap.sh archive 42"
+check "archive: keeps the branch of a worktree with uncommitted changes" 0 has_branch "$eco/api" feature/42-export-orders
+
+eco="$(setup_built archive-undeletable)"
+prs "$eco" api feature/42-export-orders "merged 7 https://host/pull/7"
+touch "$eco/.fake/write-summary"
+wt="$eco/api/.worktrees/feature/42-export-orders"
+mkdir -p "$wt/cache" && echo x > "$wt/cache/f" && echo '/cache/' >> "$eco/api/.git/info/exclude"
+chmod 555 "$wt/cache"   # like files a container left owned by root
+check_output "archive: says how to remove a worktree it cannot delete" 0 "sudo rm -rf .*worktree prune" \
+  bash -c "cd '$eco' && ./bootstrap.sh archive 42"
+chmod -R u+w "$wt" 2> /dev/null
+
+eco="$(add_fakes "$(setup_symlink archive-symlink)")"
+issue "$eco" 42 "Export orders" api
+(cd "$eco" && ./bootstrap.sh apply 42 > /dev/null 2>&1)
+prs "$eco" api feature/42-export-orders "merged 7 https://host/pull/7"
+touch "$eco/.fake/write-summary"
+(cd "$eco" && ./bootstrap.sh archive 42 > /dev/null 2>&1)
+check "archive: a repo that was a symbolic link is a link to its clone again" 0 \
+  bash -c "[[ -L '$eco/api' && \$(git -C '$eco/api' branch --show-current) == main ]]"
+
+# reject
+
+eco="$(setup_built reject-no-reason)"
+check_output "reject: exits 1 without a reason" 1 "reason" \
+  bash -c "cd '$eco' && ./bootstrap.sh reject 42"
+
+eco="$(setup_built reject-merged)"
+prs "$eco" api feature/42-export-orders "merged 7 https://host/pull/7"
+check_output "reject: exits 1 when a PR is already merged, and says to revert it" 1 "revert" \
+  bash -c "cd '$eco' && ./bootstrap.sh reject 42 'Not needed'"
+not_logged "reject: with a merged PR the issue stays open" "$eco" host-calls "issue-close"
+
+eco="$(setup_built reject-ok)"
+prs "$eco" api feature/42-export-orders "open 7 https://host/pull/7"
+check_output "reject: exits 0 and says the issue is rejected" 0 "#42 rejected" \
+  bash -c "cd '$eco' && ./bootstrap.sh reject 42 'Not needed any more'"
+logged "reject: closes the open PRs" "$eco" host-calls "^pr-close api 7 "
+logged "reject: with the reason as a comment" "$eco" host-calls "^  comment: Not needed any more$"
+logged "reject: closes the issue as not planned" "$eco" host-calls "^issue-close 42 not-planned$"
+check "reject: removes the worktree" 1 test -d "$eco/api/.worktrees/feature/42-export-orders"
+check "reject: deletes .work/<n>/" 1 test -d "$eco/.work/42"
+
+eco="$(setup_flow reject-no-repos)"
+issue "$eco" 44 "Half-written proposal"
+check "reject: an issue whose spec lists no repo is still rejected" 0 \
+  bash -c "cd '$eco' && ./bootstrap.sh reject 44 'Duplicate'"
+logged "reject: closes an issue whose spec lists no repo" "$eco" host-calls "^issue-close 44 not-planned$"
 
 # --- sync -----------------------------------------------------------------
 
@@ -295,59 +460,23 @@ chmod +x "$eco/tests/makefile.test.sh"
 check_output "tests: runs every tests/*.test.sh and fails if any fails" 3 "second suite ran" \
   bash -c "cd '$eco' && ./bootstrap.sh tests"
 
-# --- check-spec -----------------------------------------------------------
-
-# An ecosystem repo cloned from a local "remote" whose main branch holds the proposal
-# for add-dark-mode and the archived proposal for old-change. Prints its folder.
-setup_specs() {
-  local case_dir="$TMP/$1" remote="$TMP/$1/remote-eco"
-  git init -q -b main "$remote"
-  mkdir -p "$remote/openspec/changes/add-dark-mode" "$remote/openspec/changes/archive/2026-01-15-old-change"
-  echo proposal > "$remote/openspec/changes/add-dark-mode/proposal.md"
-  echo proposal > "$remote/openspec/changes/archive/2026-01-15-old-change/proposal.md"
-  git -C "$remote" add . && git -C "$remote" commit -q -m proposals
-  git clone -q "$remote" "$case_dir/eco"
-  cp "$SCRIPT" "$case_dir/eco/"
-  echo "$case_dir/eco"
-}
-
-eco="$(setup_specs specs)"
-check_output "check-spec: exits 0 when the proposal is merged into the remote main branch" 0 "merged" \
-  bash -c "cd '$eco' && ./bootstrap.sh check-spec add-dark-mode"
-check_output "check-spec: exits 0 when the proposal is archived" 0 "archived" \
-  bash -c "cd '$eco' && ./bootstrap.sh check-spec old-change"
-check "check-spec: exits 1 when the proposal is not on the remote" 1 \
-  bash -c "cd '$eco' && ./bootstrap.sh check-spec unknown-change"
-mkdir -p "$eco/openspec/changes/local-only" && echo draft > "$eco/openspec/changes/local-only/proposal.md"
-check "check-spec: exits 1 when the proposal only exists locally" 1 \
-  bash -c "cd '$eco' && ./bootstrap.sh check-spec local-only"
-publish_change "$eco" pending "- [ ] 1.1 (api) Something"
-check_output "check-spec: exits 0 when the proposal is on spec/<id> of the remote, published after the last fetch" 0 "published" \
-  bash -c "cd '$eco' && ./bootstrap.sh check-spec pending"
-git -C "$eco/../remote-eco" branch -q -D spec/pending
-check "check-spec: exits 1 once spec/<id> is deleted from the remote, even if fetched before" 1 \
-  bash -c "cd '$eco' && ./bootstrap.sh check-spec pending"
-check "check-spec: exits 1 without an id" 1 \
-  bash -c "cd '$eco' && ./bootstrap.sh check-spec"
-check "check-spec: exits 1 with an id that is not kebab-case" 1 \
-  bash -c "cd '$eco' && ./bootstrap.sh check-spec ../add-dark-mode"
-
 # --- doctor ---------------------------------------------------------------
 
-# A filled-in ecosystem repo with OpenSpec initialised. Prints its folder.
+# A filled-in ecosystem repo whose git host CLI is logged in. Prints its folder.
 setup_filled() {
   local eco="$TMP/$1/eco"
-  mkdir -p "$eco/docs/product/decisions" "$eco/openspec/specs" "$eco/openspec/changes" \
-    "$eco/.claude/commands/opsx" "$eco/api/.git"
+  mkdir -p "$eco/docs/product/decisions" "$eco/scripts" "$eco/api/.git"
   git init -q -b main "$eco"
   cp "$SCRIPT" "$(dirname "$SCRIPT")/.gitignore" "$eco/"
   echo "api git@example.com:acme/api.git core" > "$eco/repos.txt"
-  printf '# Acme ecosystem\n\nMain branch: main. Branches: feature/<change-id>.\n' > "$eco/AGENTS.md"
+  printf '# Acme ecosystem\n\nMain branch: main. Branches: feature/<n>-<slug>.\n' > "$eco/AGENTS.md"
   printf 'schema: spec-driven\ncontext: |\n  Product: invoicing for small shops.\n' > "$eco/openspec/config.yaml"
   printf '# System map\n\nLast reviewed: %s\n\n| api | user:<id>:events |\n' "$(date +%Y-%m-%d)" > "$eco/docs/system-map.md"
   printf '# Sensitive areas\n\n## Payments\n' > "$eco/docs/product/sensitive-areas.md"
   printf '# 0001 · Ecosystem repo\n\n- Date: 2026-01-15\n' > "$eco/docs/product/decisions/0001-ecosystem-repo.md"
-  echo opsx > "$eco/.claude/commands/opsx/propose.md"
+  printf '#!/usr/bin/env bash\n[[ ! -f "$(dirname "$0")/no-auth" ]] || { echo "!! gh is not logged in" >&2; exit 1; }\n' \
+    > "$eco/scripts/host.sh"
+  chmod +x "$eco/scripts/host.sh"
   echo "$eco"
 }
 
@@ -363,13 +492,25 @@ check_absent "doctor: ignores placeholders inside HTML comments" "ignored in com
   bash -c "cd '$eco' && ./bootstrap.sh doctor"
 
 eco="$(setup_filled doctor-notation)"
-printf '# Acme ecosystem\n\nWork in <repo>/.worktrees/<branch>.\n' > "$eco/AGENTS.md"
-check "doctor: <branch> is notation used by the rules, not a placeholder" 0 \
+printf '# Acme ecosystem\n\nWork in <repo>/.worktrees/<branch>, prompts/<step>.md, REASON="<reason>", #<n>.\n' > "$eco/AGENTS.md"
+check "doctor: <branch>, <step>, <reason> and <n> are notation used by the rules, not placeholders" 0 \
   bash -c "cd '$eco' && ./bootstrap.sh doctor"
 
 eco="$(setup_filled doctor-no-openspec)"
-rm -rf "$eco/.claude/commands" "$eco/openspec/specs"
-check_output "doctor: exits 1 when openspec init has not been run" 1 "openspec init" \
+rm -rf "$eco/openspec"
+check "doctor: OpenSpec is optional" 0 \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+
+eco="$(setup_filled doctor-no-auth)"
+touch "$eco/scripts/no-auth"
+check_output "doctor: warns when the git host CLI is not logged in" 0 "gh is not logged in" \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+
+eco="$(setup_filled doctor-temporary)"
+mkdir -p "$eco/.work/42" "$eco/docs/superpowers" "$eco/openspec/changes/42" "$eco/.worktrees/docs"
+touch "$eco/.work/42/spec.md" "$eco/local.mk" "$eco/docs/superpowers/plan.md" "$eco/openspec/changes/42/proposal.md" \
+  "$eco/.worktrees/docs/x"
+check_absent "doctor: does not warn about temporary files ignored on purpose" "\.work|local\.mk|superpowers|openspec/changes|\.worktrees" \
   bash -c "cd '$eco' && ./bootstrap.sh doctor"
 
 eco="$(setup_filled doctor-todo)"

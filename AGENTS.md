@@ -7,15 +7,17 @@
 -->
 
 This folder holds the repos of every <Company> service, each with its own git, plus what
-they all share: this file, `docs/` and `openspec/`. The ecosystem repo ignores the service repos:
-a change in `api/` is committed in `api/`, never in the ecosystem repo.
+they all share: this file, `docs/`, `prompts/` and the workflow scripts. The ecosystem repo
+ignores the service repos: a change in `api/` is committed in `api/`, never in the ecosystem
+repo.
 
 ## Ecosystem settings
 
 - Main branch of every repo: `<main>` (see `repos.txt` for exceptions).
 - Git host CLI: `<gh | glab>`. "PR" in this file means pull request or merge request.
-- Branch names: `feature/<change-id>` for features, `fix/<short-description>` for bugs,
-  `spec/<change-id>` for proposals in the ecosystem repo.
+- Branch names: `feature/<n>-<slug>` for features and `fix/<n>-<slug>` for bugs, where `<n>`
+  is the number of the change's issue in the ecosystem repo. The workflow commands create
+  them.
 
 ## Before touching a repo
 
@@ -23,15 +25,14 @@ a change in `api/` is committed in `api/`, never in the ecosystem repo.
   commands and conventions are there. This file only holds shared rules.
 - Work only in the repos the change needs. Do not modify others "while you are at it".
 - Modify a repo only from a worktree of its branch, never from its main checkout:
-  `./bootstrap.sh branch` creates it in `<repo>/.worktrees/<branch>`. If `<repo>` is a
-  symbolic link, do not write through it: `./bootstrap.sh branch` replaces it with the
-  worktree at that same path. If someone else already pushed the branch, the worktree starts
-  from it.
+  `make apply` and `make review` create it in `<repo>/.worktrees/<branch>`. If `<repo>` is a
+  symbolic link, do not write through it: they replace it with the worktree at that same
+  path. If someone else already pushed the branch, the worktree starts from it.
 - The ecosystem repo follows the same rule: its folder always stays on the main branch, up to
   date, because the workflow commands are its own files and another branch would run another
-  version of them. Change the ecosystem repo itself (`AGENTS.md`, `docs/`, scripts) in a
-  worktree of it, e.g. `git worktree add .worktrees/<branch> -b <branch> origin/HEAD`.
-  `./bootstrap.sh doctor` and `./bootstrap.sh branch` warn when it is not on the main branch,
+  version of them. Change the ecosystem repo itself (`AGENTS.md`, `docs/`, `prompts/`,
+  scripts) in a worktree of it, e.g. `git worktree add .worktrees/<branch> -b <branch> origin/HEAD`.
+  `./bootstrap.sh doctor` and the workflow commands warn when it is not on the main branch,
   up to date.
 
 ## System map
@@ -46,82 +47,47 @@ Read it BEFORE proposing or implementing a change that:
 - reads or writes database tables owned by another service,
 - touches authentication or credentials shared between services.
 
-If your change creates, modifies or removes one of those contracts, update
-`docs/system-map.md` and say so in the proposal. Do not read it for changes that stay
-inside a single service.
+If your change creates, modifies or removes one of those contracts, say so in the
+*Contracts and sensitive areas* section of the spec. `make archive` checks at the end
+whether `docs/system-map.md` must change. Do not read it for changes that stay inside a
+single service.
 
 ## Product context
 
 `docs/product/` holds the sensitive areas, external constraints, glossary and past
 decisions. Read it when a change affects user-visible behaviour.
 
-The sensitive areas are listed in `docs/product/sensitive-areas.md`, and only there:
-any change in them requires an OpenSpec proposal, however small it looks.
+The sensitive areas are listed in `docs/product/sensitive-areas.md`, and only there. A
+change that touches one, however small it looks, needs someone else on the team to review
+its spec on the issue before it is built.
 
-## Workflow: new features (OpenSpec)
+## Workflow
 
-- OpenSpec, in `./openspec/`, is the only source of specs. Do not create design documents
-  outside `openspec/changes/<id>/`.
-- One change is one proposal, even if it spans several repos. The proposal lists the
-  affected repos.
-- The proposal lives on the branch `spec/<id>`, and its ecosystem PR (`spec: <id>`) stays
-  open for the whole implementation. It is merged **at the end**, once every code PR is
-  merged, and it also carries the archive: one ecosystem PR per change, so the main branch
-  only gets what was built.
-- Do not implement anything until the proposal's PR is open.
-- When `/opsx:propose` finishes, without asking, do both steps below and then report the PR
-  link and the branches created:
-  1. Open the proposal's PR in the ecosystem repo: create the branch `spec/<id>` from an
-     up-to-date main branch, commit only `openspec/changes/<id>/` (and `docs/system-map.md`
-     if it changed), push, and open the PR against the main branch. Write its description by
-     filling in `templates/proposal-pr.md`: plain language, for a reviewer who has not read
-     the proposal, readable in five minutes. Never merge or approve a PR: a person does that.
-  2. Create the change's branches: `./bootstrap.sh branch <id>` (below).
-  If opening the PR fails (no git host CLI, no permission), stop there, say why and give the
-  commands for the person to run.
-- Create the branches from the ecosystem root: `./bootstrap.sh branch <id>`. It checks that
-  the proposal is published (`spec/<id>` exists on the remote) and creates `feature/<id>` in
-  the repos tagged `(repo)` in the `tasks.md` of that branch. If it fails, do not implement:
-  say that the proposal's PR must be opened first. Never create a change's branches by
-  passing the repos by hand: that skips the check. To see where a proposal stands without
-  creating anything: `./bootstrap.sh check-spec <id>`.
-- Implement with `/opsx:apply`, task by task, following the TDD rules below.
-- Everything that changes in the proposal during the implementation goes on `spec/<id>`,
-  committed and pushed, without opening new PRs:
-  - progress: tick each task in `tasks.md` when it is done;
-  - behaviour changes: update the proposal first with `/opsx:update <id>`, ask before
-    continuing, and add it to the "Changes during implementation" section of its PR
-    description, so the reviewer sees what changed from what was proposed.
-  Review comments on the PR are applied the same way.
-- If a new task touches a repo that was not in the proposal, add it with its `(repo)` tag,
-  push `spec/<id>` and run `./bootstrap.sh branch <id>` again: it creates the branch in that
-  repo.
-- Each affected repo gets its own PR. All of them reference `<id>` in the title and link
-  the proposal's PR in their description.
-- Once the last code PR is merged, on `spec/<id>` updated with the main branch: tick the
-  last tasks, run `/opsx:archive <id>` (it moves the proposal to `archive/` and merges its
-  specs into `openspec/specs/`), push, and say that the proposal's PR is ready to review and
-  merge. `/opsx:archive` also checks that `docs/system-map.md` still matches the contracts
-  the change touched, following `operations.archive` in `openspec/config.yaml`.
-- Accepted risk: code reaches the main branch before anyone has reviewed the spec. If the
-  reviewer disagrees at the end with something already merged, it is fixed with new PRs or
-  reverted. If a change needs agreement before it is built (sensitive areas, contracts
-  between services), ask for the review of the proposal's PR before starting, even though
-  it is only merged at the end.
+Every change, feature or bug, has an issue in the ecosystem repo whose body is the spec,
+written with `templates/spec.md`. The steps are in `README.md`: `make explore`, `propose`,
+`verify`, `apply`, `review`, `archive` and `reject`. Each one starts the person's agent with
+the instructions of `prompts/<step>.md`.
 
-## Workflow: abandoning a change
+- The spec on the issue is the only source of what gets built. Do not write design documents
+  in the repos or in the ecosystem repo.
+- Temporary documents (drafts, plans, reports) go in `.work/<n>/`, which git ignores.
+  `make archive` and `make reject` delete it.
+- If the spec has to change during the implementation, say so before going on. Then update
+  the issue body (`scripts/host.sh issue-set-body`) and explain the change in a comment
+  (`scripts/host.sh issue-comment`).
+- Each affected repo gets its own PR, with the issue title in its title and the link to the
+  issue in its description.
+- OpenSpec and Superpowers are optional methods (`METHOD` in `local.mk`): they help to think,
+  write and build, but the result goes on the issue. Do not use `/opsx:propose` or
+  `/opsx:archive`.
 
-If a change is dropped, its proposal never reaches the main branch. Do not use
-`/opsx:archive`: it would merge into `openspec/specs/` behaviour that was never built.
+## Abandoning a change
 
-- Ecosystem repo: close the PR `spec: <id>` without merging, with the reason in a comment.
-- Code repos: close the change's open PRs without merging. If one is already merged, open a
-  PR in that repo that reverts it, following the proposal's rollback plan. No new proposal
-  is needed: it goes back to the behaviour in `openspec/specs/`.
-- Delete the branches `spec/<id>` and `feature/<id>`, locally and on the remote, once their
-  PRs are closed. Anyone who wants to keep the work saves it locally first. Git does not
-  delete a branch that is checked out in a worktree: remove the worktree first with
-  `git -C <repo> worktree remove .worktrees/<branch>`.
+- Run `make reject I=<n> REASON="<reason>"`: it closes the open PRs with the reason, posts it
+  on the issue, closes the issue as not planned and removes worktrees, branches and
+  `.work/<n>/`. Anyone who wants to keep the work saves it first.
+- If a PR is already merged, `make reject` does nothing: first open a PR in that repo that
+  reverts it, following the spec's *Rollback*.
 
 ## TDD and verification (always)
 
@@ -132,18 +98,15 @@ If a change is dropped, its proposal never reaches the main branch. Do not use
   repo. If something fails, fix it or say so; never hide it or disable a test.
 - Commit each change in the repo it belongs to. Never mix several repos in one commit.
 
-## Workflow: bug fixes
+## Bugs
 
 - Do not propose any fix before finding the root cause. Reproduce the bug, form a
   hypothesis and check it before touching code. If a fix does not work, investigate
   again: do not chain blind fixes.
 - First write a test that reproduces the bug and watch it fail.
-- No OpenSpec proposal is needed, unless the fix changes the expected behaviour, touches a
-  sensitive area or changes a contract between services.
-- Create the branch from the ecosystem root, in the affected repos:
-  `./bootstrap.sh branch fix/<short-description> <repo>...`. If the fix needs a proposal,
-  give it the id `fix-<short-description>`: `./bootstrap.sh branch fix-<short-description>`
-  then creates `fix/<short-description>` once the proposal's PR is open.
+- Its issue is labelled `bug` (`make propose TYPE=bug`) and its branch is `fix/<n>-<slug>`.
+  If the issue already exists without the template, complete its body with it before
+  `make apply`.
 
 ## Reviewing someone else's PR
 

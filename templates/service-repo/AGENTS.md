@@ -6,9 +6,9 @@
   rules live in the ecosystem repo.
 -->
 
-This repo is part of the <Company> ecosystem. The shared rules, the system map and the
-specs live in ../AGENTS.md, ../docs/ and ../openspec/. Start the agent from the ecosystem
-root, not from inside this repo.
+This repo is part of the <Company> ecosystem. The shared rules and the system map live in
+../AGENTS.md and ../docs/, and the spec of each change in an issue of the ecosystem repo.
+Start the agent from the ecosystem root, not from inside this repo.
 
 ## Commands
 

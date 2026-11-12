@@ -12,9 +12,20 @@
 ENV_REPO :=
 ENV_TARGETS := up stop restart ps logs
 
+# Personal settings, never committed: AGENT, AGENT_REVIEWER and METHOD (see scripts/agent.sh
+# and "review" in bootstrap.sh), and GIT_HOST if it is not detected (see scripts/host.sh).
+# What is not set there comes from the environment.
+-include local.mk
+# strip: with "AGENT = claude  # or codex", make drops the comment but keeps the spaces.
+AGENT := $(strip $(AGENT))
+AGENT_REVIEWER := $(strip $(AGENT_REVIEWER))
+METHOD := $(strip $(METHOD))
+GIT_HOST := $(strip $(GIT_HOST))
+export AGENT AGENT_REVIEWER METHOD GIT_HOST
+
 REPO_DIRS := $(shell grep -vE '^[[:space:]]*(\#|$$)' repos.txt | awk '{print $$1}')
 
-.PHONY: help sync sync-all status branch check-spec doctor tests FORCE
+.PHONY: help sync sync-all status branch explore propose verify apply review archive reject doctor tests FORCE
 
 help: ## list of commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -32,24 +43,50 @@ sync-all: ## same as sync, including optional repos
 status: ## branch and state of every repo and of its worktrees
 	@./bootstrap.sh status
 
-branch: ## ID=<change-id>, or NAME=<branch> REPOS="<repo> ..."
-	@if [ -n "$(ID)" ]; then \
-		./bootstrap.sh branch "$(ID)"; \
+branch: ## I=<n> (branch and worktrees of an issue), or NAME=<branch> REPOS="<repo> ..."
+	@if [ -n "$(I)" ]; then \
+		./bootstrap.sh branch "$(I)"; \
 	elif [ -n "$(NAME)" ] && [ -n "$(REPOS)" ]; then \
 		./bootstrap.sh branch "$(NAME)" $(REPOS); \
 	else \
-		echo 'Usage: make branch ID=<change-id>  or  make branch NAME=<branch> REPOS="<repo> ..."'; \
+		echo 'Usage: make branch I=<n>  or  make branch NAME=<branch> REPOS="<repo> ..."'; \
 		exit 1; \
 	fi
 
-check-spec: ## ID=<change-id>: is its proposal published, merged or archived?
-	@if [ -z "$(ID)" ]; then echo 'Usage: make check-spec ID=<change-id>'; exit 1; fi
-	@./bootstrap.sh check-spec "$(ID)"
+## The workflow: each step starts your agent (AGENT and METHOD in local.mk)
+
+explore: ## [IDEA="..."]: explore an idea with your agent, without code or issues
+	@./bootstrap.sh explore "$(IDEA)"
+
+propose: ## IDEA="..." [TYPE=bug]: write the spec with your agent and create its issue
+	@./bootstrap.sh propose "$(or $(TYPE),feature)" "$(IDEA)"
+
+verify: ## I=<n>: review the spec of the issue with your agent, in a new session
+	@if [ -z "$(I)" ]; then echo 'Usage: make verify I=<n>'; exit 1; fi
+	@./bootstrap.sh verify "$(I)"
+
+apply: ## I=<n>: branches and worktrees of the issue, then your agent implements it
+	@if [ -z "$(I)" ]; then echo 'Usage: make apply I=<n>'; exit 1; fi
+	@./bootstrap.sh apply "$(I)"
+
+review: ## I=<n>: review the implementation with your agent, in a new session
+	@if [ -z "$(I)" ]; then echo 'Usage: make review I=<n>'; exit 1; fi
+	@./bootstrap.sh review "$(I)"
+
+archive: ## I=<n>: with its PRs merged, final summary, close the issue and clean up
+	@if [ -z "$(I)" ]; then echo 'Usage: make archive I=<n>'; exit 1; fi
+	@./bootstrap.sh archive "$(I)"
+
+reject: ## I=<n> REASON="...": drop the issue (close its PRs, publish the reason, clean up)
+	@if [ -z "$(I)" ] || [ -z "$(REASON)" ]; then echo 'Usage: make reject I=<n> REASON="..."'; exit 1; fi
+	@./bootstrap.sh reject "$(I)" "$(REASON)"
+
+## Checks
 
 doctor: ## check the ecosystem repo is filled in and set up
 	@./bootstrap.sh doctor
 
-tests: ## tests of bootstrap.sh and this Makefile, and shellcheck if installed
+tests: ## tests of bootstrap.sh, scripts/ and this Makefile, and shellcheck if installed
 	@./bootstrap.sh tests
 
 ## Development environment: delegated to ENV_REPO
