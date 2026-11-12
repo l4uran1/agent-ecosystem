@@ -362,6 +362,11 @@ check_output "doctor: exits 1 and names the file when a placeholder is left" 1 "
 check_absent "doctor: ignores placeholders inside HTML comments" "ignored in comments" \
   bash -c "cd '$eco' && ./bootstrap.sh doctor"
 
+eco="$(setup_filled doctor-notation)"
+printf '# Acme ecosystem\n\nWork in <repo>/.worktrees/<branch>.\n' > "$eco/AGENTS.md"
+check "doctor: <branch> is notation used by the rules, not a placeholder" 0 \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+
 eco="$(setup_filled doctor-no-openspec)"
 rm -rf "$eco/.claude/commands" "$eco/openspec/specs"
 check_output "doctor: exits 1 when openspec init has not been run" 1 "openspec init" \

@@ -30,7 +30,7 @@ a change in `api/` is committed in `api/`, never in the ecosystem repo.
 - The ecosystem repo follows the same rule: its folder always stays on the main branch, up to
   date, because the workflow commands are its own files and another branch would run another
   version of them. Change the ecosystem repo itself (`AGENTS.md`, `docs/`, scripts) in a
-  worktree of it, e.g. `git worktree add .worktrees/<branch> -b <branch> origin/<main>`.
+  worktree of it, e.g. `git worktree add .worktrees/<branch> -b <branch> origin/HEAD`.
   `./bootstrap.sh doctor` and `./bootstrap.sh branch` warn when it is not on the main branch,
   up to date.
 

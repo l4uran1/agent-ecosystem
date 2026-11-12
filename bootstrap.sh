@@ -373,8 +373,8 @@ context_files() {
 }
 
 # Prints "P file:line: <token>" for each unfilled placeholder and "T file:line: text" for
-# each TODO, ignoring HTML comments. <id>, <change-id>, <repo> and <short-description>
-# are notation used by the rules themselves, not placeholders.
+# each TODO, ignoring HTML comments. <id>, <change-id>, <repo>, <branch> and
+# <short-description> are notation used by the rules themselves, not placeholders.
 scan_context() {
   awk '
     FNR == 1 { in_comment = 0 }
@@ -392,7 +392,7 @@ scan_context() {
       if (text ~ /TODO:/) print "T " FILENAME ":" FNR ": " text
       while (match(text, /<[^<>]+>/)) {
         token = substr(text, RSTART, RLENGTH)
-        if (token !~ /^<(id|change-id|repo|short-description)>$/) print "P " FILENAME ":" FNR ": " token
+        if (token !~ /^<(id|change-id|repo|branch|short-description)>$/) print "P " FILENAME ":" FNR ": " token
         text = substr(text, RSTART + RLENGTH)
       }
     }' "$@"
