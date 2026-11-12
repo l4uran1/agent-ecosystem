@@ -180,10 +180,10 @@ which you can also run directly.
 | `make sync` | `./bootstrap.sh` | Clones missing repos and brings every repo's main branch up to date, whatever branch you are on |
 | `make sync-all` | `./bootstrap.sh --all` | Same, including optional repos |
 | `make status` | `./bootstrap.sh status` | Branch and state of every repo and of its worktrees |
-| `make branch NAME=<branch> REPOS="<repo> ..."` | `./bootstrap.sh branch <branch> <repo>...` | Creates the branch from the main branch in a worktree `<repo>/.worktrees/<branch>` of each repo, without touching its main checkout; if it already exists, says where. A `<repo>` that is a symbolic link is replaced by the worktree at that same path |
+| `make branch NAME=<branch> REPOS="<repo> ..."` | `./bootstrap.sh branch <branch> <repo>...` | Creates the branch in a worktree `<repo>/.worktrees/<branch>` of each repo, without touching its main checkout: from the remote branch if someone already pushed it, otherwise from the main branch. If the worktree already exists, says where. A `<repo>` that is a symbolic link is replaced by the worktree at that same path |
 | `make branch ID=<id>` | `./bootstrap.sh branch <id>` | Same, with `feature/<id>` in the repos tagged in the `tasks.md` of `spec/<id>`. Only if the proposal's PR is open |
 | `make check-spec ID=<id>` | `./bootstrap.sh check-spec <id>` | Says, without creating anything, whether the proposal `<id>` is published (PR open), merged or archived |
-| `make doctor` | `./bootstrap.sh doctor` | Checks the ecosystem repo is filled in and set up: placeholders, TODOs, OpenSpec, system map age, files left out |
+| `make doctor` | `./bootstrap.sh doctor` | Checks the ecosystem repo is filled in and set up: placeholders, TODOs, OpenSpec, system map age, files left out, and that it is on its main branch, up to date |
 | `make tests` | `./bootstrap.sh tests` | Runs the tests of `bootstrap.sh` and the Makefile, and shellcheck if installed |
 | `make <repo>/<target>` | — | Runs `make <target>` in that repo from the root, e.g. `make api/test` |
 

@@ -25,7 +25,14 @@ a change in `api/` is committed in `api/`, never in the ecosystem repo.
 - Modify a repo only from a worktree of its branch, never from its main checkout:
   `./bootstrap.sh branch` creates it in `<repo>/.worktrees/<branch>`. If `<repo>` is a
   symbolic link, do not write through it: `./bootstrap.sh branch` replaces it with the
-  worktree at that same path.
+  worktree at that same path. If someone else already pushed the branch, the worktree starts
+  from it.
+- The ecosystem repo follows the same rule: its folder always stays on the main branch, up to
+  date, because the workflow commands are its own files and another branch would run another
+  version of them. Change the ecosystem repo itself (`AGENTS.md`, `docs/`, scripts) in a
+  worktree of it, e.g. `git worktree add .worktrees/<branch> -b <branch> origin/<main>`.
+  `./bootstrap.sh doctor` and `./bootstrap.sh branch` warn when it is not on the main branch,
+  up to date.
 
 ## System map
 

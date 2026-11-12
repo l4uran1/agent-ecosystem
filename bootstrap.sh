@@ -5,10 +5,11 @@
 #   ./bootstrap.sh            clone/update the "core" repos
 #   ./bootstrap.sh --all      also include the "optional" repos
 #   ./bootstrap.sh status     show the branch and state of each repo and of its worktrees
-#   ./bootstrap.sh branch X   create branch X (from the main branch, or the existing one) in a
-#                             worktree <repo>/.worktrees/X of each given repo, without touching
-#                             its main checkout. If <repo> is a symbolic link, it is replaced by
-#                             the worktree at that same path:
+#   ./bootstrap.sh branch X   create branch X (the local one, the remote one someone else pushed,
+#                             or a new one from the main branch) in a worktree
+#                             <repo>/.worktrees/X of each given repo, without touching its main
+#                             checkout. If <repo> is a symbolic link, it is replaced by the
+#                             worktree at that same path:
 #                             ./bootstrap.sh branch fix/login-loop api web
 #   ./bootstrap.sh branch ID  with the id of a published OpenSpec change and no repos: create
 #                             feature/ID (fix/<rest> for a fix-<rest> id) in the repos tagged
@@ -17,7 +18,8 @@
 #                             say whether the proposal ID is published, merged or archived; exit 1
 #                             if it is not on the ecosystem remote
 #   ./bootstrap.sh doctor     check the ecosystem repo is filled in and set up (placeholders, TODOs,
-#                             OpenSpec, system map age, files left out by .gitignore)
+#                             OpenSpec, system map age, files left out by .gitignore, and that the
+#                             ecosystem repo is on its main branch, up to date)
 #   ./bootstrap.sh tests      run every suite in tests/ (and shellcheck, if installed)
 #
 # Safe to run as often as you like: it never deletes anything, never switches your
@@ -173,12 +175,14 @@ worktree_of() {
     | awk -v b="branch refs/heads/$2" '/^worktree /{p=substr($0, 10)} $0 == b {print p}'
 }
 
-# Creates the worktree <path> of <repo> on <branch>: the existing one, or a new one from
-# origin/<main>.
+# Creates the worktree <path> of <repo> on <branch>: the local one if it exists; otherwise
+# the one on the remote (someone else pushed it); otherwise a new one from origin/<main>.
 add_worktree() {
   local repo="$1" path="$2" name="$3" main="$4"
   if git -C "$repo" show-ref --verify --quiet "refs/heads/$name"; then
     git -C "$repo" worktree add --quiet "$path" "$name"
+  elif git -C "$repo" show-ref --verify --quiet "refs/remotes/origin/$name"; then
+    git -C "$repo" worktree add --quiet --track -b "$name" "$path" "origin/$name"
   else
     git -C "$repo" worktree add --quiet --no-track -b "$name" "$path" "origin/$main"
   fi
@@ -192,8 +196,34 @@ ignore_worktrees() {
   grep -qxF '/.worktrees/' "$exclude" 2>/dev/null || echo '/.worktrees/' >> "$exclude"
 }
 
+# The workflow commands are files of the ecosystem repo: on another branch, or with its main
+# branch behind, another version of them runs. Prints a one-line warning, or nothing.
+ecosystem_warning() {
+  local main branch behind
+  main="$(ecosystem_branch)"
+  branch="$(git -C "$ROOT" branch --show-current 2> /dev/null)" || return 0
+  if [[ "$branch" != "$main" ]]; then
+    echo "The ecosystem repo is on ${branch:-a detached HEAD}, not on $main: the commands of that branch run"
+    return 0
+  fi
+  git -C "$ROOT" fetch --quiet origin "$main" 2> /dev/null || return 0
+  behind="$(git -C "$ROOT" rev-list --count "HEAD..origin/$main" 2> /dev/null)" || return 0
+  if [[ "$behind" -gt 0 ]]; then
+    echo "The ecosystem repo is $behind commit(s) behind origin/$main: update it with git pull"
+  fi
+}
+
+# Warns (without stopping) before a workflow command if the ecosystem repo is not on its
+# main branch, up to date.
+warn_ecosystem() {
+  local warning
+  warning="$(ecosystem_warning)"
+  if [[ -n "$warning" ]]; then echo "!! $warning" >&2; fi
+}
+
 cmd_branch() {
   local name="${1:?Give the branch name}"; shift
+  warn_ecosystem
 
   # Without repos, <name> is the id of a published change: its repos come from its tasks.
   if [[ $# -eq 0 ]]; then
@@ -221,6 +251,8 @@ cmd_branch() {
     main="$(main_branch_of "$dir")"
     git -C "$dir" fetch --quiet origin "$main" \
       || { echo "!! $dir: could not fetch $main"; failed=$((failed + 1)); continue; }
+    # If the branch is already on the remote (someone else pushed it), it starts from there.
+    git -C "$dir" fetch --quiet origin "+refs/heads/$name:refs/remotes/origin/$name" 2> /dev/null || true
 
     # A linked repo is replaced by a worktree at the same path, so nothing is written to
     # the clone the link points to. The link is put back if that fails.
@@ -247,7 +279,7 @@ cmd_branch() {
 # otherwise DEFAULT_BRANCH.
 ecosystem_branch() {
   local head
-  head="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  head="$(git -C "$ROOT" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
   if [[ -n "$head" ]]; then echo "${head#origin/}"; else echo "$DEFAULT_BRANCH"; fi
 }
 
@@ -422,6 +454,10 @@ cmd_doctor() {
       warnings=$((warnings + 1))
     fi
   fi
+
+  local warning
+  warning="$(ecosystem_warning)"
+  if [[ -n "$warning" ]]; then echo "   $warning"; warnings=$((warnings + 1)); fi
 
   # Anything ignored that is not a service repo never reaches the rest of the team.
   if git rev-parse --git-dir > /dev/null 2>&1; then
