@@ -36,8 +36,8 @@
 #                             temporary files (does nothing if a PR is already merged)
 #
 #   ./bootstrap.sh doctor     check the ecosystem repo is filled in and set up (placeholders, TODOs,
-#                             system map age, files left out by .gitignore, the git host CLI, and
-#                             that the ecosystem repo is on its main branch, up to date)
+#                             system map age, files left out by .gitignore, the git host CLI, origin/HEAD
+#                             and that the ecosystem repo is on its main branch, up to date)
 #   ./bootstrap.sh tests      run every suite in tests/ (and shellcheck, if installed)
 #
 # Safe to run as often as you like: it never deletes anything, never switches your
@@ -75,9 +75,24 @@ main_branch_of() {
   echo "$DEFAULT_BRANCH"
 }
 
+# False only when the ecosystem repo has an origin but no origin/HEAD: git clone sets it, git
+# init plus git remote add does not, and the documented commands start worktrees from it.
+has_origin_head() {
+  [[ -e "$ROOT/.git" ]] && git -C "$ROOT" remote get-url origin > /dev/null 2>&1 || return 0
+  git -C "$ROOT" symbolic-ref --quiet refs/remotes/origin/HEAD > /dev/null
+}
+
 cmd_sync() {
   local include_optional="no"
   [[ "${1:-}" == "--all" ]] && include_optional="yes"
+
+  if ! has_origin_head; then
+    if git -C "$ROOT" remote set-head origin --auto > /dev/null 2>&1; then
+      echo "-> ecosystem repo: origin/HEAD set to the remote's default branch"
+    else
+      echo "!! ecosystem repo: could not set origin/HEAD (git remote set-head origin --auto)"
+    fi
+  fi
 
   local cloned=0 updated=0 background=0 skipped=0 failed=0
   while read -r dir url group main; do
@@ -610,6 +625,10 @@ cmd_doctor() {
   local warning
   warning="$(ecosystem_warning)"
   if [[ -n "$warning" ]]; then echo "   $warning"; warnings=$((warnings + 1)); fi
+  if ! has_origin_head; then
+    echo "   origin/HEAD is not set in the ecosystem repo: run ./bootstrap.sh, or git remote set-head origin --auto"
+    warnings=$((warnings + 1))
+  fi
 
   # The workflow commands need the git host CLI, logged in.
   if ! warning="$(scripts/host.sh check-auth 2>&1)"; then

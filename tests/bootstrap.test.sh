@@ -563,6 +563,16 @@ git -C "$eco/../other" commit -q --allow-empty -m "merged later" && git -C "$eco
 check_output "doctor: warns when the ecosystem repo is behind its remote main branch" 0 "ecosystem repo is 1 commit\(s\) behind origin/main" \
   bash -c "cd '$eco' && ./bootstrap.sh doctor"
 
+# origin/HEAD: git clone sets it, git init plus git remote add does not (as in setup_filled_remote).
+eco="$(setup_filled_remote doctor-origin-head)"
+check_output "doctor: warns when origin/HEAD is not set in the ecosystem repo" 0 "origin/HEAD is not set" \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+check "sync: sets origin/HEAD in the ecosystem repo when it is missing" 0 \
+  bash -c "cd '$eco' && ./bootstrap.sh > /dev/null \
+    && [[ \$(git symbolic-ref refs/remotes/origin/HEAD) == refs/remotes/origin/main ]]"
+check_absent "doctor: no warning once origin/HEAD is set" "origin/HEAD" \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+
 echo
 echo "Passed: $passed · Failed: $failed"
 [[ $failed -eq 0 ]]
