@@ -71,6 +71,7 @@ expect_listed() {
 expect "sync runs bootstrap.sh" "bootstrap " sync
 expect "sync-all runs bootstrap.sh --all" "bootstrap --all" sync-all
 expect "status runs bootstrap.sh status" "bootstrap status" status
+expect "prune runs bootstrap.sh prune" "bootstrap prune" prune
 expect "branch I=<n> creates the branches of an issue" "bootstrap branch 42" branch I=42
 expect "branch NAME= REPOS= passes the repos" "bootstrap branch fix/login api web" branch NAME=fix/login "REPOS=api web"
 expect_failure "branch without ID or NAME+REPOS fails" branch

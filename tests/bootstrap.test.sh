@@ -30,6 +30,8 @@ setup() {
   echo "$case_dir/eco"
 }
 
+has_branch() { git -C "$1" show-ref --verify --quiet "refs/heads/$2"; }
+
 pass() { passed=$((passed + 1)); echo "ok   $1"; }
 
 # fail <description> <reason> <command output>
@@ -153,6 +155,46 @@ rm -rf "$eco/../remote-api"
 check "branch: exits non-zero when the remote cannot be fetched" 1 \
   bash -c "cd '$eco' && ./bootstrap.sh branch feature/x api web"
 
+# --- prune: worktrees already merged -----------------------------------------
+
+# merged <eco> <repo> <branch>: a worktree of <branch> with one commit, merged on the remote's
+# main branch without fast-forward (as PRs are), then fetched.
+merged() {
+  local eco="$1" repo="$2" branch="$3"
+  (cd "$eco" && ./bootstrap.sh branch "$branch" "$repo" > /dev/null 2>&1)
+  git -C "$eco/$repo/.worktrees/$branch" commit -q --allow-empty -m "work on $branch"
+  git -C "$eco/$repo/.worktrees/$branch" push -q origin "$branch" 2> /dev/null
+  git -C "$eco/../remote-$repo" merge -q --no-ff "$branch" -m "Merge $branch"
+  git -C "$eco/$repo" fetch -q origin
+}
+
+eco="$(setup prune)"
+merged "$eco" api feature/1-done
+merged "$eco" web feature/2-dirty
+touch "$eco/web/.worktrees/feature/2-dirty/new"
+(cd "$eco" && ./bootstrap.sh branch feature/3-new api > /dev/null 2>&1)
+out="$(cd "$eco" && ./bootstrap.sh status | sed -n '/make prune/,$p')"
+check "status: lists the worktrees already merged and clean" 0 grep -qF "api/.worktrees/feature/1-done" <<< "$out"
+check "status: does not list a merged worktree with uncommitted changes" 1 grep -qF "2-dirty" <<< "$out"
+check "status: does not list a worktree without commits of its own" 1 grep -qF "3-new" <<< "$out"
+(cd "$eco" && ./bootstrap.sh prune > /dev/null)
+check "prune: removes the worktrees already merged and clean" 1 test -e "$eco/api/.worktrees/feature/1-done"
+check "prune: deletes their local branch" 1 has_branch "$eco/api" feature/1-done
+check "prune: keeps a merged worktree with uncommitted changes" 0 test -e "$eco/web/.worktrees/feature/2-dirty/new"
+check "prune: keeps a worktree without commits of its own" 0 test -d "$eco/api/.worktrees/feature/3-new"
+check_absent "status: does not mention prune when nothing is merged" "make prune" \
+  bash -c "cd '$eco' && ./bootstrap.sh status"
+
+eco="$(setup prune-moved-on)"
+merged "$eco" api feature/4-goes-on
+git -C "$eco/api/.worktrees/feature/4-goes-on" branch -q -u origin/feature/4-goes-on
+git -C "$eco/../remote-api" switch -q feature/4-goes-on
+git -C "$eco/../remote-api" commit -q --allow-empty -m "more work after the merge"
+git -C "$eco/../remote-api" switch -q main
+git -C "$eco/api" fetch -q origin
+check_absent "status: does not list a merged worktree whose remote branch moved on" "4-goes-on" \
+  bash -c "cd '$eco' && ./bootstrap.sh status | sed -n '/make prune/,\$p'"
+
 # --- the workflow, with issues ------------------------------------------------
 # scripts/host.sh and scripts/agent.sh are fakes: the host answers from .fake/ and logs every
 # call, and the agent logs its arguments and, if asked, writes the file a step expects.
@@ -222,7 +264,6 @@ not_logged() {
   else pass "$1"; fi
 }
 
-has_branch() { git -C "$1" show-ref --verify --quiet "refs/heads/$2"; }
 
 # branch <n>
 

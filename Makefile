@@ -25,7 +25,7 @@ export AGENT AGENT_REVIEWER METHOD GIT_HOST
 
 REPO_DIRS := $(shell grep -vE '^[[:space:]]*(\#|$$)' repos.txt | awk '{print $$1}')
 
-.PHONY: help sync sync-all status branch explore propose verify apply review archive reject doctor tests FORCE
+.PHONY: help sync sync-all status prune branch explore propose verify apply review archive reject doctor tests FORCE
 
 help: ## list of commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -42,6 +42,9 @@ sync-all: ## same as sync, including optional repos
 
 status: ## branch and state of every repo and of its worktrees
 	@./bootstrap.sh status
+
+prune: ## remove the worktrees already merged and clean, with their local branch
+	@./bootstrap.sh prune
 
 branch: ## I=<n> (branch and worktrees of an issue), or NAME=<branch> REPOS="<repo> ..."
 	@if [ -n "$(I)" ]; then \

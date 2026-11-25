@@ -5,6 +5,7 @@
 #   ./bootstrap.sh            clone/update the "core" repos
 #   ./bootstrap.sh --all      also include the "optional" repos
 #   ./bootstrap.sh status     show the branch and state of each repo and of its worktrees
+#   ./bootstrap.sh prune      remove the worktrees already merged and clean, with their local branch
 #   ./bootstrap.sh branch X   create branch X (the local one, the remote one someone else pushed,
 #                             or a new one from the main branch) in a worktree
 #                             <repo>/.worktrees/X of each given repo, without touching its main
@@ -208,6 +209,63 @@ cmd_status() {
     done < <(git -C "$dir" worktree list --porcelain \
       | awk '/^worktree /{if (p) print p, b; p=substr($0, 10); b=""} /^branch /{b=substr($0, 19)} END{if (p) print p, b}')
   done < <(read_repos)
+
+  local merged
+  merged="$(all_merged_worktrees)"
+  if [[ -n "$merged" ]]; then
+    echo
+    echo "Worktrees already merged and clean (make prune removes them):"
+    while read -r path branch; do echo "  ${path#"$ROOT"/} ${branch:-(detached)}"; done <<< "$merged"
+  fi
+}
+
+# Worktrees of <dir> already merged, as "<path> <branch>": clean, and with their last commit
+# (and the one of their remote branch, if any) on origin/<main>, brought in by a merge. A new
+# worktree with no commits of its own is on the first-parent line of main and does not count.
+# Neither does a repo folder that is itself a worktree (it lives at the root).
+# merged_worktrees <dir> <main>
+merged_worktrees() {
+  local dir="$1" main="$2" mainline path head branch upstream
+  mainline="$(git -C "$dir" rev-list --first-parent "origin/$main" 2> /dev/null)" || return 0
+  while read -r path head branch; do
+    [[ "$path" == "$ROOT" || "$(dirname "$path")" == "$ROOT" ]] && continue
+    git -C "$dir" merge-base --is-ancestor "$head" "origin/$main" || continue
+    grep -qxF "$head" <<< "$mainline" && continue
+    [[ -z "$(git -C "$path" status --porcelain)" ]] || continue
+    # If the branch went on on the remote after the merge, someone is still working on it.
+    upstream="$(git -C "$path" rev-parse --quiet --verify "@{upstream}")" \
+      && ! git -C "$dir" merge-base --is-ancestor "$upstream" "origin/$main" && continue
+    echo "$path $branch"
+  done < <(git -C "$dir" worktree list --porcelain | tail -n +2 \
+    | awk '/^worktree /{if (p) print p, h, b; p=substr($0, 10); h=""; b=""} /^HEAD /{h=$2} /^branch /{b=substr($0, 19)} END{if (p) print p, h, b}')
+}
+
+# The merged worktrees of the ecosystem repo and of every cloned repo.
+all_merged_worktrees() {
+  local dir main
+  [[ -e "$ROOT/.git" ]] && merged_worktrees "$ROOT" "$(ecosystem_branch)"
+  while read -r dir _url _group main; do
+    [[ -e "$ROOT/$dir/.git" ]] && merged_worktrees "$ROOT/$dir" "$main"
+  done < <(read_repos)
+}
+
+# Removes the merged worktrees and their local branches. Remote branches are left to the git
+# host (deleted on merge) or to archive.
+cmd_prune() {
+  local path branch main removed=0
+  while read -r path branch; do
+    [[ -n "$path" ]] || continue
+    main="$(git -C "$path" worktree list --porcelain | sed -n '1s/^worktree //p')"
+    if ! git -C "$main" worktree remove "$path" 2> /dev/null; then
+      echo "!! could not remove ${path#"$ROOT"/} (files owned by another user?); remove it with sudo rm -rf and run git -C $main worktree prune"
+      continue
+    fi
+    # Already on origin/<main>: -D loses nothing even if the local main branch is behind.
+    [[ -z "$branch" ]] || git -C "$main" branch -D "$branch" > /dev/null
+    echo "-> removed ${path#"$ROOT"/} ${branch:-(detached)}"
+    removed=$((removed + 1))
+  done <<< "$(all_merged_worktrees)"
+  echo "Worktrees removed: $removed"
 }
 
 # Path of the worktree of <repo> that has <branch> checked out, or nothing.
@@ -689,6 +747,7 @@ cmd_tests() {
 
 case "${1:-}" in
   status) cmd_status ;;
+  prune) cmd_prune ;;
   branch) shift; cmd_branch "$@" ;;
   explore) shift; cmd_explore "$@" ;;
   propose) shift; cmd_propose "$@" ;;
