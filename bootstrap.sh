@@ -36,8 +36,9 @@
 #                             temporary files (does nothing if a PR is already merged)
 #
 #   ./bootstrap.sh doctor     check the ecosystem repo is filled in and set up (placeholders, TODOs,
-#                             system map age, files left out by .gitignore, the git host CLI, origin/HEAD
-#                             and that the ecosystem repo is on its main branch, up to date)
+#                             system map age, files left out by .gitignore, the git host CLI,
+#                             origin/HEAD, and that the ecosystem repo is on its main branch, up
+#                             to date)
 #   ./bootstrap.sh tests      run every suite in tests/ (and shellcheck, if installed)
 #
 # Safe to run as often as you like: it never deletes anything, never switches your
