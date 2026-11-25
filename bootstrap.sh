@@ -36,6 +36,8 @@
 #                             issue, close it as not planned and remove worktrees, branches and
 #                             temporary files (does nothing if a PR is already merged)
 #
+#   ./bootstrap.sh map-review review docs/system-map.md against the code and open a PR of the
+#                             ecosystem repo with the changes (no issue)
 #   ./bootstrap.sh doctor     check the ecosystem repo is filled in and set up (placeholders, TODOs,
 #                             system map age, files left out by .gitignore, the git host CLI,
 #                             origin/HEAD, and that the ecosystem repo is on its main branch, up
@@ -440,6 +442,12 @@ cmd_explore() {
   exec scripts/agent.sh explore ${1:+"Idea: $1"}
 }
 
+# Reviews the whole system map against the code with the agent, without an issue.
+cmd_map_review() {
+  warn_ecosystem
+  exec scripts/agent.sh map-review
+}
+
 # Drafts go to a folder of their own in .work/ until the issue has a number: the agent
 # renames it to .work/<n>/ once it creates the issue.
 cmd_propose() {
@@ -686,7 +694,7 @@ cmd_doctor() {
     if [[ -n "$reviewed" ]] && epoch="$(to_epoch "$reviewed")"; then
       age=$(( ($(date +%s) - epoch) / 86400 ))
       if [[ $age -gt $max_age ]]; then
-        echo "   docs/system-map.md: last reviewed $reviewed, $age days ago (limit: $max_age)"
+        echo "   docs/system-map.md: last reviewed $reviewed, $age days ago (limit: $max_age): run make map-review"
         warnings=$((warnings + 1))
       fi
     elif ! grep -q '^Last reviewed: *<' docs/system-map.md; then
@@ -750,6 +758,7 @@ case "${1:-}" in
   prune) cmd_prune ;;
   branch) shift; cmd_branch "$@" ;;
   explore) shift; cmd_explore "$@" ;;
+  map-review) cmd_map_review ;;
   propose) shift; cmd_propose "$@" ;;
   verify) shift; cmd_verify "$@" ;;
   apply) shift; cmd_apply "$@" ;;

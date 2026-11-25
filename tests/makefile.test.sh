@@ -81,6 +81,7 @@ expect_failure "branch with NAME and no REPOS fails" branch NAME=fix/login
 
 expect "explore passes the idea" "bootstrap explore CSV export" explore "IDEA=CSV export"
 expect "explore works without an idea" "bootstrap explore " explore
+expect "map-review runs bootstrap.sh map-review" "bootstrap map-review" map-review
 expect "propose is a feature by default" "bootstrap propose feature CSV export" propose "IDEA=CSV export"
 expect "propose TYPE=bug proposes a bug fix" "bootstrap propose bug Login loops" propose TYPE=bug "IDEA=Login loops"
 for step in verify apply review archive; do

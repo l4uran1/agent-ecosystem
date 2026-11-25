@@ -25,7 +25,7 @@ export AGENT AGENT_REVIEWER METHOD GIT_HOST
 
 REPO_DIRS := $(shell grep -vE '^[[:space:]]*(\#|$$)' repos.txt | awk '{print $$1}')
 
-.PHONY: help sync sync-all status prune branch explore propose verify apply review archive reject doctor tests FORCE
+.PHONY: help sync sync-all status prune branch explore propose verify apply review archive reject map-review doctor tests FORCE
 
 help: ## list of commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -85,6 +85,9 @@ reject: ## I=<n> REASON="...": drop the issue (close its PRs, publish the reason
 	@./bootstrap.sh reject "$(I)" "$(REASON)"
 
 ## Checks
+
+map-review: ## review docs/system-map.md against the code with your agent and open a PR (no issue)
+	@./bootstrap.sh map-review
 
 doctor: ## check the ecosystem repo is filled in and set up
 	@./bootstrap.sh doctor

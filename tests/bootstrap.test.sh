@@ -312,6 +312,10 @@ eco="$(setup_flow flow-explore)"
 (cd "$eco" && ./bootstrap.sh explore "CSV export" > /dev/null 2>&1)
 logged "explore: starts the agent with the idea" "$eco" agent-calls "^AGENT= explore Idea: CSV export$"
 
+eco="$(setup_flow flow-map-review)"
+(cd "$eco" && ./bootstrap.sh map-review > /dev/null 2>&1)
+logged "map-review: starts the agent with the map-review step, without an issue" "$eco" agent-calls "^AGENT= map-review$"
+
 eco="$(setup_flow flow-propose)"
 (cd "$eco" && ./bootstrap.sh propose bug "Login loops" > /dev/null 2>&1)
 logged "propose: starts the agent with the type, a draft folder in .work/ and the idea" "$eco" agent-calls \
@@ -593,7 +597,7 @@ check_output "doctor: warns about template comments left in place" 0 "system-map
 
 eco="$(setup_filled doctor-stale-map)"
 sed -i.bak 's/^Last reviewed: .*/Last reviewed: 2020-01-01/' "$eco/docs/system-map.md" && rm "$eco/docs/system-map.md.bak"
-check_output "doctor: warns when the system map has not been reviewed for a long time" 0 "system-map.md.*2020-01-01" \
+check_output "doctor: warns when the system map has not been reviewed for a long time" 0 "system-map.md.*2020-01-01.*make map-review" \
   bash -c "cd '$eco' && ./bootstrap.sh doctor"
 
 eco="$(setup_filled doctor-ignored)"

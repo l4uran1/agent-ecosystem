@@ -198,7 +198,8 @@ which you can also run directly.
 | `make prune` | `./bootstrap.sh prune` | Removes the worktrees already merged and clean, with their local branch (`make status` lists them) |
 | `make branch I=<n>` | `./bootstrap.sh branch <n>` | Creates the branch of issue `<n>` in worktrees of the repos of its *Affected repos*, without starting the agent |
 | `make branch NAME=<branch> REPOS="<repo> ..."` | `./bootstrap.sh branch <branch> <repo>...` | Creates the branch in a worktree `<repo>/.worktrees/<branch>` of each repo, without touching its main checkout: from the remote branch if someone already pushed it, otherwise from the main branch. If the worktree already exists, says where. A `<repo>` that is a symbolic link is replaced by the worktree at that same path |
-| `make doctor` | `./bootstrap.sh doctor` | Checks the ecosystem repo is filled in and set up: placeholders, TODOs, system map age, files left out, the git host CLI, and that it is on its main branch, up to date |
+| `make map-review` | `./bootstrap.sh map-review` | Your agent reviews `docs/system-map.md` against the code of every repo and opens a PR of the ecosystem repo (no issue). `make doctor` warns after 90 days |
+| `make doctor` | `./bootstrap.sh doctor` | Checks the ecosystem repo is filled in and set up: placeholders, TODOs, system map age, files left out, the git host CLI, `origin/HEAD`, and that it is on its main branch, up to date |
 | `make tests` | `./bootstrap.sh tests` | Runs the tests of `bootstrap.sh`, `scripts/` and the Makefile, and shellcheck if installed |
 | `make <repo>/<target>` | — | Runs `make <target>` in that repo from the root, e.g. `make api/test` |
 

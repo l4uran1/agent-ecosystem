@@ -52,6 +52,9 @@ If your change creates, modifies or removes one of those contracts, say so in th
 whether `docs/system-map.md` must change. Do not read it for changes that stay inside a
 single service.
 
+The full review of the map against the code, without an issue, is `make map-review`.
+`./bootstrap.sh doctor` warns when the map has not been reviewed for 90 days.
+
 ## Product context
 
 `docs/product/` holds the sensitive areas, external constraints, glossary and past
