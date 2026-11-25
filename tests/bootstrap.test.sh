@@ -372,6 +372,15 @@ check "archive: deletes the local branch" 1 has_branch "$eco/api" feature/42-exp
 check "archive: deletes the remote branch" 1 has_branch "$eco/../remote-api" feature/42-export-orders
 check "archive: deletes .work/<n>/" 1 test -d "$eco/.work/42"
 
+eco="$(setup_built archive-closed)"
+prs "$eco" api feature/42-export-orders "merged 7 https://host/pull/7"
+echo closed > "$eco/.fake/issues/42/state"
+check_output "archive: an issue already closed is only cleaned up" 0 "#42 was already closed" \
+  bash -c "cd '$eco' && ./bootstrap.sh archive 42"
+not_logged "archive: does not start the agent for an issue already closed" "$eco" agent-calls "archive"
+not_logged "archive: does not comment on or close an issue already closed" "$eco" host-calls "issue-(comment|close)"
+check "archive: removes the worktree of an issue already closed" 1 test -d "$eco/api/.worktrees/feature/42-export-orders"
+
 eco="$(setup_built archive-dirty)"
 prs "$eco" api feature/42-export-orders "merged 7 https://host/pull/7"
 touch "$eco/.fake/write-summary"

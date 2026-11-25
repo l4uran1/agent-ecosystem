@@ -460,16 +460,23 @@ cmd_archive() {
     exit 1
   fi
 
-  summary=".work/$n/summary.md"
-  mkdir -p ".work/$n"
-  scripts/agent.sh archive "$n" "Branch: $branch" "Repos: ${repos//$'\n'/ }" "Summary: $summary" || true
-  [[ -s "$summary" ]] || { echo "!! No summary in $summary: #$n is not closed and nothing is removed" >&2; exit 1; }
-  scripts/host.sh issue-comment "$n" "$summary"
-  scripts/host.sh issue-close "$n" completed
+  # An issue already closed (by hand, or archived before) is only cleaned up.
+  local closed=""
+  [[ "$(scripts/host.sh issue-get "$n" state)" == closed ]] && closed=yes
+  if [[ -n "$closed" ]]; then
+    echo "-> #$n was already closed: only its worktrees and branches are removed"
+  else
+    summary=".work/$n/summary.md"
+    mkdir -p ".work/$n"
+    scripts/agent.sh archive "$n" "Branch: $branch" "Repos: ${repos//$'\n'/ }" "Summary: $summary" || true
+    [[ -s "$summary" ]] || { echo "!! No summary in $summary: #$n is not closed and nothing is removed" >&2; exit 1; }
+    scripts/host.sh issue-comment "$n" "$summary"
+    scripts/host.sh issue-close "$n" completed
+  fi
 
   for repo in $repos; do remove_issue_branch "$repo" "$branch"; done
   rm -rf ".work/$n"
-  echo "-> #$n closed, with the summary published"
+  [[ -n "$closed" ]] || echo "-> #$n closed, with the summary published"
 }
 
 # Drops an issue: closes its open PRs with the reason, publishes it on the issue, closes it as
