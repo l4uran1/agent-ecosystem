@@ -610,7 +610,7 @@ cmd_reject() {
   warn_ecosystem
   need_issue reject "${1:-}"
   local n="$1" reason="${2:-}" out branch="" repos="" repo state number url problems=() closes=() pr
-  [[ -n "$reason" ]] || { echo "Give the reason: reject $n \\"<reason>\\"" >&2; exit 1; }
+  [[ -n "$reason" ]] || { echo "Give the reason: reject $n \"<reason>\"" >&2; exit 1; }
   if out="$(issue_branch "$n" 2> /dev/null)"; then
     branch="${out%%$'\n'*}"; repos="${out#*$'\n'}"
   else

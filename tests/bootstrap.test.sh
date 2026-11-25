@@ -512,7 +512,7 @@ logged "respond: starts the agent with the branch, the worktrees and the open PR
 # reject
 
 eco="$(setup_built reject-no-reason)"
-check_output "reject: exits 1 without a reason" 1 "reason" \
+check_output "reject: exits 1 without a reason" 1 "Give the reason: reject 42" \
   bash -c "cd '$eco' && ./bootstrap.sh reject 42"
 
 eco="$(setup_built reject-merged)"
