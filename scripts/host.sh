@@ -20,12 +20,15 @@
 #                                  comment on a PR of <repo> and close it
 #   check-auth                     check the CLI is installed and logged in
 #
-# Issues live in the ecosystem repo; PRs in each service repo. GIT_HOST picks the CLI (gh or
-# glab); by default, glab if the ecosystem repo's origin URL contains "gitlab", gh otherwise.
+# Issues live in the ecosystem repo; PRs in each service repo. GIT_HOST (environment or
+# local.mk) picks the CLI (gh or glab); by default, glab if the ecosystem repo's origin URL contains "gitlab", gh otherwise.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/local-mk.sh
+source "$ROOT/scripts/local-mk.sh"
+load_local_mk
 
 die() { echo "!! $*" >&2; exit 1; }
 

@@ -15,6 +15,17 @@ export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 
 passed=0 failed=0
 
+# The steps start a new agent session, as from a terminal, unless a test says otherwise.
+unset CLAUDECODE CODEX_THREAD_ID CURSOR_AGENT
+export AGENT_SESSION=new
+
+# copy_bootstrap <eco>: bootstrap.sh and the script it sources, as in the real ecosystem repo.
+copy_bootstrap() {
+  mkdir -p "$1/scripts"
+  cp "$SCRIPT" "$1/"
+  cp "$(dirname "$SCRIPT")/scripts/local-mk.sh" "$1/scripts/"
+}
+
 # Creates a fresh ecosystem folder with two cloned repos (api, web) whose remotes are
 # local repos on main. Prints the ecosystem folder.
 setup() {
@@ -25,7 +36,7 @@ setup() {
     git -C "$case_dir/remote-$r" commit -q --allow-empty -m init
     printf '%s file://%s core\n' "$r" "$case_dir/remote-$r" >> "$case_dir/eco/repos.txt"
   done
-  cp "$SCRIPT" "$case_dir/eco/"
+  copy_bootstrap "$case_dir/eco"
   (cd "$case_dir/eco" && ./bootstrap.sh > /dev/null 2>&1)
   echo "$case_dir/eco"
 }
@@ -327,7 +338,25 @@ check_output "propose: exits 1 with an unknown type" 1 "feature.bug" \
 eco="$(setup_flow flow-verify)"
 issue "$eco" 42 "Export orders" api
 (cd "$eco" && ./bootstrap.sh verify 42 > /dev/null 2>&1)
-logged "verify: starts the agent with the issue" "$eco" agent-calls "^AGENT= verify 42$"
+logged "verify: starts the agent with the issue and the path of its report" "$eco" agent-calls "^AGENT= verify 42 Report: \.work/42/verify\.md$"
+
+for step in verify review; do
+  eco="$(setup_flow "flow-$step-current")"
+  issue "$eco" 42 "Export orders" api
+  check_output "$step: refuses to run inside the calling agent's session" 1 "needs a clean session" \
+    bash -c "cd '$eco' && AGENT_SESSION=current ./bootstrap.sh $step 42"
+  not_logged "$step: does not start the agent inside the calling session" "$eco" agent-calls "$step"
+done
+
+eco="$(setup_flow flow-verify-headless)"
+issue "$eco" 42 "Export orders" api
+touch "$eco/.fake/write-report"
+check_output "verify headless: tells the calling session to present the report" 0 "follow \"With the person\"" \
+  bash -c "cd '$eco' && AGENT_SESSION=headless ./bootstrap.sh verify 42"
+logged "verify headless: the agent only reviews, with nobody to talk to" "$eco" agent-calls "^AGENT= verify 42 Report: \.work/42/verify\.md No person: "
+rm "$eco/.fake/write-report"
+check_output "verify headless: fails when the agent leaves no report" 1 "no report" \
+  bash -c "cd '$eco' && AGENT_SESSION=headless ./bootstrap.sh verify 42"
 check_output "verify: exits 1 without an issue number" 1 "verify 42" \
   bash -c "cd '$eco' && ./bootstrap.sh verify abc"
 
@@ -425,6 +454,19 @@ check_output "archive: an issue already closed is only cleaned up" 0 "#42 was al
 not_logged "archive: does not start the agent for an issue already closed" "$eco" agent-calls "archive"
 not_logged "archive: does not comment on or close an issue already closed" "$eco" host-calls "issue-(comment|close)"
 check "archive: removes the worktree of an issue already closed" 1 test -d "$eco/api/.worktrees/feature/42-export-orders"
+
+eco="$(setup_built archive-current)"
+prs "$eco" api feature/42-export-orders "merged 7 https://host/pull/7"
+check "archive in an agent's session: first prints the instructions and stops" 0 \
+  bash -c "cd '$eco' && AGENT_SESSION=current ./bootstrap.sh archive 42"
+logged "archive in an agent's session: passes the step to the agent" "$eco" agent-calls "^AGENT= archive 42 "
+not_logged "archive in an agent's session: the issue stays open until the summary exists" "$eco" host-calls "issue-close"
+check "archive in an agent's session: nothing is removed yet" 0 test -d "$eco/api/.worktrees/feature/42-export-orders"
+echo "h2. Built" > "$eco/.work/42/summary.md"
+rm "$eco/.fake/agent-calls"
+check_output "archive in an agent's session: run again with the summary, it closes the issue" 0 "#42 closed" \
+  bash -c "cd '$eco' && AGENT_SESSION=current ./bootstrap.sh archive 42"
+not_logged "archive in an agent's session: the second run does not ask the agent again" "$eco" agent-calls "archive"
 
 eco="$(setup_built archive-dirty)"
 prs "$eco" api feature/42-export-orders "merged 7 https://host/pull/7"
@@ -536,7 +578,7 @@ check "sync: exits non-zero when a remote cannot be reached" 1 \
 # --- tests ----------------------------------------------------------------
 
 eco="$TMP/tests-cmd"
-mkdir -p "$eco/tests" && cp "$SCRIPT" "$eco/"
+mkdir -p "$eco/tests" && copy_bootstrap "$eco"
 printf '#!/usr/bin/env bash\necho fake suite ran\nexit 3\n' > "$eco/tests/bootstrap.test.sh"
 chmod +x "$eco/tests/bootstrap.test.sh"
 check_output "tests: runs the test suite and returns its exit code" 3 "fake suite ran" \
@@ -553,7 +595,7 @@ setup_filled() {
   local eco="$TMP/$1/eco"
   mkdir -p "$eco/docs/product/decisions" "$eco/scripts" "$eco/api/.git"
   git init -q -b main "$eco"
-  cp "$SCRIPT" "$(dirname "$SCRIPT")/.gitignore" "$eco/"
+  copy_bootstrap "$eco" && cp "$(dirname "$SCRIPT")/.gitignore" "$eco/"
   echo "api git@example.com:acme/api.git core" > "$eco/repos.txt"
   printf '# Acme ecosystem\n\nMain branch: main. Branches: feature/<n>-<slug>.\n' > "$eco/AGENTS.md"
   printf 'schema: spec-driven\ncontext: |\n  Product: invoicing for small shops.\n' > "$eco/openspec/config.yaml"

@@ -47,6 +47,7 @@ EOF
 
 mkdir -p "$TMP/bin" "$TMP/eco/api" "$TMP/eco/scripts"
 cp "$SOURCE" "$HOST"
+cp "$(dirname "$SOURCE")/local-mk.sh" "$TMP/eco/scripts/"
 make_fake gh; make_fake glab
 export PATH="$TMP/bin:$PATH" FAKE_DIR="$TMP/fake" FAKE_LOG="$TMP/calls"
 mkdir -p "$FAKE_DIR"

@@ -54,7 +54,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/local-mk.sh
+source "$ROOT/scripts/local-mk.sh"
+load_local_mk
 LIST="$ROOT/repos.txt"
+# From the shell of an agent, the steps stay in its session (see scripts/agent.sh).
+AGENT_SESSION="${AGENT_SESSION:-$([[ -t 0 && -z "${CLAUDECODE:-}${CODEX_THREAD_ID:-}${CURSOR_AGENT:-}" ]] && echo new || echo current)}"
+export AGENT_SESSION
 
 # Main branch used when repos.txt does not set one for a repo.
 # Override for a single run with: DEFAULT_BRANCH=master ./bootstrap.sh
@@ -461,10 +467,28 @@ cmd_propose() {
   exec scripts/agent.sh propose "Type: $type" "Draft: $draft" ${idea:+"Idea: $idea"}
 }
 
+# verify and review need eyes that did not write the spec or the code: a new session, with a UI
+# or without one (headless, the one the skills start from inside an agent).
+need_new_session() {
+  [[ "$AGENT_SESSION" == new || "$AGENT_SESSION" == headless ]] && return 0
+  echo "!! $1 needs a clean session: run it with the skill eco-$1, or from a terminal (./bootstrap.sh $1 <n>)" >&2
+  exit 1
+}
+
+# Without a UI nobody can answer: the agent only writes the report, and the session that started
+# it presents it to the person.
 cmd_verify() {
   warn_ecosystem
   need_issue verify "${1:-}"
-  exec scripts/agent.sh verify "$1"
+  need_new_session verify
+  local report=".work/$1/verify.md"
+  mkdir -p ".work/$1"
+  [[ "$AGENT_SESSION" == headless ]] || exec scripts/agent.sh verify "$1" "Report: $report"
+  rm -f "$report"
+  scripts/agent.sh verify "$1" "Report: $report" \
+    "No person: do only the \"Review\" and finish; another session presents the report." || exit 1
+  [[ -s "$report" ]] || { echo "!! The review ended with no report in $report" >&2; exit 1; }
+  printf '\nInstructions for this session: read the report in %s and follow "With the person" in prompts/verify.md.\n' "$report"
 }
 
 cmd_apply() {
@@ -498,6 +522,7 @@ cmd_respond() {
 cmd_review() {
   warn_ecosystem
   need_issue review "${1:-}"
+  need_new_session review
   local n="$1" repo prs context=()
   checkout_issue "$n" || exit 1
   context=("Branch: $ISSUE_BRANCH" "Worktrees: $ISSUE_WORKTREES")
@@ -561,7 +586,12 @@ cmd_archive() {
   else
     summary=".work/$n/summary.md"
     mkdir -p ".work/$n"
-    scripts/agent.sh archive "$n" "Branch: $branch" "Repos: ${repos//$'\n'/ }" "Summary: $summary" || true
+    # In an agent's session it takes two runs: the first prints the instructions; once the agent
+    # runs it again with the approved summary, it publishes it and closes the issue.
+    if [[ "$AGENT_SESSION" != current || ! -s "$summary" ]]; then
+      scripts/agent.sh archive "$n" "Branch: $branch" "Repos: ${repos//$'\n'/ }" "Summary: $summary" || true
+      [[ "$AGENT_SESSION" != current ]] || exit 0
+    fi
     [[ -s "$summary" ]] || { echo "!! No summary in $summary: #$n is not closed and nothing is removed" >&2; exit 1; }
     scripts/host.sh issue-comment "$n" "$summary"
     scripts/host.sh issue-close "$n" completed
