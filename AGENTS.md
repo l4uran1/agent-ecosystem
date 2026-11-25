@@ -100,16 +100,16 @@ the instructions of `prompts/<step>.md`.
 - Do not mark a task as done without running the tests, lint and build of the affected
   repo. If something fails, fix it or say so; never hide it or disable a test.
 - Verifying also means running the change: start whatever it needs and check that it does
-  what the spec says. Passing tests is not enough.
+  what the spec says (`docs/verify/<repo>.md`, if it exists). Passing tests is not enough.
 - If something still fails after three attempts to fix it, stop and tell the person what you
   tried. Do not keep trying blindly.
 - A flaky test (one that sometimes passes and sometimes does not) is investigated like a bug.
   Never add waits or retries to it, or skip it, to make it pass. If you cannot find the cause,
   stop and tell the person; only with their agreement, delete it and explain why in the commit
   and in the PR.
-- The rules a change is judged by (this file, each repo's `AGENTS.md`, `prompts/`) are read
-  from the main branch of the ecosystem repo. Do not change them in the same branch as the code
-  they judge.
+- The rules a change is judged by (this file, each repo's `AGENTS.md`, `prompts/`,
+  `docs/review/<repo>.md`, `docs/reliability-checklist.md`) are read from the main branch of the
+  ecosystem repo. Do not change them in the same branch as the code they judge.
 - Commit each change in the repo it belongs to. Never mix several repos in one commit.
 
 ## Bugs

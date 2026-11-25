@@ -9,6 +9,19 @@ In each worktree (see "Context" at the end), compare the branch with the remote 
 (`git -C <worktree> diff origin/HEAD...HEAD`). Also read the code around the changes: the diff
 alone is not enough.
 
+The rules you judge by are always read from the main branch, never from the branch under
+review: a change cannot modify what judges it.
+
+- `docs/review/<repo>.md` of the ecosystem repo, if it exists: what to look at in that repo's
+  code.
+- `docs/reliability-checklist.md` of the ecosystem repo: apply only the items whose trigger
+  matches the diff.
+
+Both are on the main branch of the ecosystem repo, which is where `make review` runs. Before
+starting, check that the ecosystem repo is on its main branch and up to date
+(`git branch --show-current`, and `git fetch -q origin && git rev-list --count HEAD..origin/HEAD`,
+which must print 0). If not, stop and tell the person: you would be judging with other rules.
+
 1. **Acceptance criteria.** For each one, say whether it is met and show where: the code and
    the test that *How it's verified* asks for. A criterion without that test is not met;
    neither is one proven with a weaker test (a unit test where the spec asks for an end-to-end
@@ -23,6 +36,7 @@ alone is not enough.
    it is not a defect if it is there and the spec does not ask for it.
 4. **Rules.** Those of the root `AGENTS.md` and of each repo's: TDD, tests, lint and build.
    Run the repo's tests if you can.
+5. **Reliability checklist.** The items that apply, and whether the change meets them.
 
 Do not change code, do not commit and do not comment on the PRs: the report is for the person.
 

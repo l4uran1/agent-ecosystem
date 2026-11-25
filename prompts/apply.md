@@ -47,9 +47,13 @@ without it the code guesses.
 ## Before opening the PRs
 
 Run the change for real, not only its tests: start whatever it needs and go through what the
-user, or the service that calls it, does. Follow the repo's `AGENTS.md` to start it and check
-the change by hand (a call to the endpoint, the screen in the browser, the message on the
-queue). If it cannot run locally, say so in the PR and explain why. Keep the evidence (the
+user, or the service that calls it, does.
+
+- If `docs/verify/<repo>.md` exists in the ecosystem repo, follow it.
+- Otherwise, follow the repo's `AGENTS.md` to start it and check the change by hand (a call to
+  the endpoint, the screen in the browser, the message on the queue).
+- If it cannot run locally, say so in the PR and explain why.
+ Keep the evidence (the
 output, a trace, a screenshot) for the PR description.
 
 Go through `.work/<n>/pending.md` with the person, if it exists, and ask once for each point

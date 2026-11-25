@@ -168,6 +168,9 @@ your-ecosystem/                 ← this template
 ├── scripts/                    ← agent.sh starts your agent; host.sh talks to GitHub or GitLab
 ├── docs/
 │   ├── system-map.md           ← contracts between services
+│   ├── reliability-checklist.md ← failures already seen, that can be spotted in a diff
+│   ├── review/                 ← per repo: what to review more carefully
+│   ├── verify/                 ← per repo: how to run a branch to verify a change
 │   └── product/                ← sensitive areas, constraints, glossary, decisions
 ├── templates/                  ← the spec; per-repo AGENTS.md, CLAUDE.md, PR template
 ├── tests/                      ← tests for bootstrap.sh, scripts/ and the Makefile
@@ -182,6 +185,9 @@ your-ecosystem/                 ← this template
   agent in a single repo can never see.
 - **Product context** (`docs/product/`): sensitive areas, external constraints, glossary
   and decisions — what cannot be read in the code.
+- **Review and verification rules** (`docs/reliability-checklist.md`, `docs/review/`,
+  `docs/verify/`): what `make review` checks besides the spec, and how to run a change instead
+  of trusting its tests. They grow from the failures that reach `make archive`.
 - **The workflow** (`prompts/`, `scripts/`, `bootstrap.sh`): one issue per change, even when
   it spans several repos, and one command per step, whatever agent each person uses.
 
