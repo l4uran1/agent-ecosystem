@@ -67,9 +67,19 @@ its spec on the issue before it is built.
 ## Workflow
 
 Every change, feature or bug, has an issue in the ecosystem repo whose body is the spec,
-written with `templates/spec.md`. The steps are in `README.md`: `make explore`, `propose`,
-`verify`, `apply`, `review`, `respond`, `archive` and `reject`. Each one starts the person's agent with
-the instructions of `prompts/<step>.md`.
+written with `templates/spec.md`. The steps are in `README.md`: `explore`, `propose`, `verify`,
+`apply`, `review`, `respond`, `archive` and `reject`. Each one is a skill, `eco-<step>`
+(`.agents/skills/`), that runs `./bootstrap.sh <step>` with the instructions of
+`prompts/<step>.md`; from a terminal, `make <step>` does the same.
+
+- The `eco-*` skills do not start on their own: only when the person names them. Never start a
+  step of the workflow the person did not ask for.
+- If the person asks for a step without naming the skill, read and follow
+  `.agents/skills/eco-<step>/SKILL.md`. Run from an agent, the script does not open another
+  agent: it prints the instructions of the step, and you follow them here. `eco-verify` and
+  `eco-review` are the exception: they open a separate session without a UI, because they need
+  a clean one. Do not run `./bootstrap.sh verify` or `review` yourself without them: they
+  refuse.
 
 - The spec on the issue is the only source of what gets built. Do not write design documents
   in the repos or in the ecosystem repo.

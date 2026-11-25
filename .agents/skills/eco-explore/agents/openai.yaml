@@ -1,0 +1,5 @@
+interface:
+  display_name: "eco-explore"
+  short_description: "Explore an idea"
+policy:
+  allow_implicit_invocation: false

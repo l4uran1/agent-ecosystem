@@ -87,6 +87,15 @@ mechanical part with a script and starts **your** agent with the instructions of
 Between `review` and `archive`, a person reviews and merges the code PRs. The full rules are
 in `AGENTS.md`.
 
+**From your agent**, each step is also a skill of the ecosystem repo (`.agents/skills/`,
+linked from `.claude/skills/`): type `/eco-<step> <arguments>` in Claude Code or Cursor, or
+`$eco-<step>` in Codex, e.g. `/eco-apply 42`. Run from an agent, the step does not open another
+agent: it prints its instructions and that same session follows them, so you can go from
+`explore` to `propose` to `apply` without leaving it. `eco-verify` and `eco-review` are the
+exception: they need eyes that did not write the spec or the code, so they open a separate
+session without a UI, and your session presents its report. The skills only start when you
+name them.
+
 <details>
 <summary><b>Bugs, spec changes, sensitive areas and dropping a change</b></summary>
 
@@ -116,7 +125,7 @@ in `AGENTS.md`.
 Each person sets their tools in `local.mk`, at the ecosystem root. Git ignores it.
 
 ```make
-AGENT = claude            # the command that starts your agent with a first message: claude, codex...
+AGENT = claude            # the command that starts your agent with a first message: claude, codex, agent (Cursor)...
 METHOD = default          # how your agent works: default, openspec or superpowers
 AGENT_REVIEWER = codex    # optional: a second agent that reviews first in make review
 ```
@@ -127,6 +136,16 @@ AGENT_REVIEWER = codex    # optional: a second agent that reviews first in make 
   the issue and temporary documents go in `.work/<n>/`.
 - **`AGENT_REVIEWER`**: if set to another agent, `make review` runs it first; then your agent
   checks its report against the code and writes the final one. Two models catch more than one.
+- **The session a step runs in** (`AGENT_SESSION`): `new` from a terminal, `current` from the
+  shell of an agent (detected), and `headless` for the separate session of `eco-verify` and
+  `eco-review`. A headless session has nobody to answer its prompts, so it runs **without
+  asking for permissions** (`claude -p --permission-mode bypassPermissions`,
+  `codex exec --dangerously-bypass-approvals-and-sandbox`, `agent -p --force`). Only
+  `claude`, `codex` and `agent` (the Cursor CLI) can run headless. If you do not want an
+  unattended agent with those permissions on your machine, run `make verify` and `make review`
+  from a terminal instead.
+- **Without make** (a skill runs `./bootstrap.sh` directly), the scripts read the same
+  settings from `local.mk` (`scripts/local-mk.sh`). The environment wins over the file.
 
 </details>
 
@@ -164,6 +183,7 @@ make archive I=42
 your-ecosystem/                 ← this template
 ├── AGENTS.md                   ← shared rules for every agent
 ├── CLAUDE.md                   ← imports AGENTS.md for Claude Code
+├── .agents/skills/            ← one skill per workflow step (eco-*), linked from .claude/skills/
 ├── bootstrap.sh                ← clones the repos, creates worktrees, runs the workflow
 ├── Makefile                    ← make shortcuts for bootstrap.sh and every repo
 ├── repos.txt                   ← list of service repos
@@ -258,7 +278,7 @@ git config --global url."https://github.com/".insteadOf "git@github.com:"
 
 - Bash (macOS, Linux, or WSL / Git Bash on Windows) and git 2.31+.
 - `gh` (GitHub) or `glab` (GitLab), logged in, and `jq`.
-- An agent CLI that takes a first message as an argument (`claude`, `codex`...).
+- An agent CLI that takes a first message as an argument (`claude`, `codex`, `agent` of Cursor...).
 - `make` for the shortcuts (optional: `./bootstrap.sh` does the same).
 
 ## License

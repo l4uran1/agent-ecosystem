@@ -25,7 +25,10 @@ issue for whoever reads it in a year:
   out.
 
 Show it to the person and wait until they approve it before finishing. Without that file, the
-script does not close the issue.
+script does not close the issue. If you got these instructions as the output of
+`./bootstrap.sh archive` in your own session, once the person approves the summary run
+`./bootstrap.sh archive <n>` again: with the summary written, it publishes it and closes the
+issue.
 
 ## The shared documentation
 

@@ -1,0 +1,5 @@
+interface:
+  display_name: "eco-apply"
+  short_description: "Build an issue"
+policy:
+  allow_implicit_invocation: false

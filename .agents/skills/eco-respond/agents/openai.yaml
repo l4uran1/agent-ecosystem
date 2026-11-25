@@ -1,0 +1,5 @@
+interface:
+  display_name: "eco-respond"
+  short_description: "Deal with the open PRs of an issue"
+policy:
+  allow_implicit_invocation: false

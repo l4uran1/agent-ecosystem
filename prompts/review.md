@@ -60,5 +60,5 @@ final one: say which points came from the first review, which you discarded and 
 that it missed.
 
 Tell the person the conclusion and the most serious problems. If reviewers comment on the PRs
-or their checks fail, the step is `make respond I=<n>`. Once every PR is merged, the next step
-is `make archive I=<n>`.
+or their checks fail, the step is `eco-respond <n>` (`make respond I=<n>`). Once every PR is
+merged, the next step is `eco-archive <n>` (`make archive I=<n>`).

@@ -30,7 +30,7 @@
 !/CLAUDE.md
 !/.claude/
 # !/.cursor/
-# !/.agents/
+!/.agents/
 # !/.github/  (already included above: GitHub Copilot writes there)
 
 # Personal Claude Code settings: never shared

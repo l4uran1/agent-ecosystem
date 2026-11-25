@@ -1,0 +1,5 @@
+interface:
+  display_name: "eco-review"
+  short_description: "Review the implementation of an issue"
+policy:
+  allow_implicit_invocation: false

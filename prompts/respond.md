@@ -68,5 +68,5 @@ its thread:
 Tell the person the state of each PR, what you changed and which threads are still open.
 
 If you added commits after `make review`, say so: the review no longer covers them and they
-can run it again. If more comments arrive, run `make respond I=<n>` again. Once every PR is
-merged, the next step is `make archive I=<n>`.
+can run it again (`eco-review <n>`, which opens a separate session). If more comments arrive,
+run `eco-respond <n>` again. Once every PR is merged, the next step is `eco-archive <n>`.
