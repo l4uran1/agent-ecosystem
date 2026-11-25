@@ -66,10 +66,10 @@ flowchart LR
 ```
 
 Every change, feature or bug, has an **issue in the ecosystem repo whose body is the spec**:
-context, affected repos, acceptance criteria, out of scope, contracts and sensitive areas,
-and rollback (`templates/spec.md`). Each command does the mechanical part with a script and
-starts **your** agent with the instructions of that step (`prompts/<step>.md`) for the part
-that needs judgement.
+context, affected repos, acceptance criteria, how each one is verified, out of scope,
+contracts and sensitive areas, and rollback (`templates/spec.md`). Each command does the
+mechanical part with a script and starts **your** agent with the instructions of that step
+(`prompts/<step>.md`) for the part that needs judgement.
 
 | Command | The script (always the same) | Your agent |
 | --- | --- | --- |

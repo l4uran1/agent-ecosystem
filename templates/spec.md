@@ -10,6 +10,11 @@ What problem it solves, and for whom.
 
 1. Given ..., when ..., then ...
 
+## How it's verified
+
+For each criterion, the test that proves it: unit, end-to-end (the app running), property-based
+or differential (old code against new, with the same inputs).
+
 ## Out of scope
 
 What this change does not do.
