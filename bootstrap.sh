@@ -28,6 +28,8 @@
 #   ./bootstrap.sh review N   review the implementation against the spec, in a new session
 #                             (creates the worktrees if needed). With AGENT_REVIEWER set to
 #                             another agent, that agent reviews first and yours checks its report
+#   ./bootstrap.sh respond N  deal with what keeps the open PRs of issue N from being merged:
+#                             failing checks, conflicts and reviewers' comments
 #   ./bootstrap.sh archive N  once every PR is merged: your agent writes the final summary and
 #                             checks docs/; then the summary is published, the issue closed and
 #                             its worktrees, branches and temporary files removed
@@ -473,6 +475,24 @@ cmd_apply() {
   exec scripts/agent.sh apply "$1" "Branch: $ISSUE_BRANCH" "Worktrees: $ISSUE_WORKTREES"
 }
 
+# Deals with what keeps the open PRs of an issue from being merged: failing checks, conflicts
+# and reviewers' comments. Works in the session that built the issue or in a new one.
+cmd_respond() {
+  warn_ecosystem
+  need_issue respond "${1:-}"
+  local n="$1" repo out state number url open=()
+  checkout_issue "$n" || exit 1
+  for repo in $ISSUE_REPOS; do
+    out="$(scripts/host.sh pr-list "$repo" "$ISSUE_BRANCH")" || { echo "!! $repo: its PRs could not be listed" >&2; exit 1; }
+    while read -r state number url; do
+      [[ "$state" == open ]] && open+=("Open PR of $repo: $number $url")
+    done <<< "$out"
+  done
+  [[ ${#open[@]} -gt 0 ]] || { echo "!! #$n has no open PR: there is nothing to deal with" >&2; exit 1; }
+  mkdir -p ".work/$n"
+  exec scripts/agent.sh respond "$n" "Branch: $ISSUE_BRANCH" "Worktrees: $ISSUE_WORKTREES" "${open[@]}"
+}
+
 # Reviewed in a new session, from the worktrees (from the remote branch if someone else built
 # it) and its PRs, against the spec.
 cmd_review() {
@@ -763,6 +783,7 @@ case "${1:-}" in
   verify) shift; cmd_verify "$@" ;;
   apply) shift; cmd_apply "$@" ;;
   review) shift; cmd_review "$@" ;;
+  respond) shift; cmd_respond "$@" ;;
   archive) shift; cmd_archive "$@" ;;
   reject) shift; cmd_reject "$@" ;;
   doctor) cmd_doctor ;;

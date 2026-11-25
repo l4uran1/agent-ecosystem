@@ -68,7 +68,7 @@ its spec on the issue before it is built.
 
 Every change, feature or bug, has an issue in the ecosystem repo whose body is the spec,
 written with `templates/spec.md`. The steps are in `README.md`: `make explore`, `propose`,
-`verify`, `apply`, `review`, `archive` and `reject`. Each one starts the person's agent with
+`verify`, `apply`, `review`, `respond`, `archive` and `reject`. Each one starts the person's agent with
 the instructions of `prompts/<step>.md`.
 
 - The spec on the issue is the only source of what gets built. Do not write design documents

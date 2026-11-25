@@ -25,7 +25,7 @@ export AGENT AGENT_REVIEWER METHOD GIT_HOST
 
 REPO_DIRS := $(shell grep -vE '^[[:space:]]*(\#|$$)' repos.txt | awk '{print $$1}')
 
-.PHONY: help sync sync-all status prune branch explore propose verify apply review archive reject map-review doctor tests FORCE
+.PHONY: help sync sync-all status prune branch explore propose verify apply review respond archive reject map-review doctor tests FORCE
 
 help: ## list of commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -75,6 +75,10 @@ apply: ## I=<n>: branches and worktrees of the issue, then your agent implements
 review: ## I=<n>: review the implementation with your agent, in a new session
 	@if [ -z "$(I)" ]; then echo 'Usage: make review I=<n>'; exit 1; fi
 	@./bootstrap.sh review "$(I)"
+
+respond: ## I=<n>: your agent deals with failing checks, conflicts and comments on its open PRs
+	@if [ -z "$(I)" ]; then echo 'Usage: make respond I=<n>'; exit 1; fi
+	@./bootstrap.sh respond "$(I)"
 
 archive: ## I=<n>: with its PRs merged, final summary, close the issue and clean up
 	@if [ -z "$(I)" ]; then echo 'Usage: make archive I=<n>'; exit 1; fi

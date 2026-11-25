@@ -62,6 +62,8 @@ flowchart LR
     v --> a["make apply<br/>worktrees, TDD,<br/>one PR per repo"]
     a --> r["make review<br/>new session"]
     r --> m["A person reviews<br/>and merges the PRs"]
+    m -- "comments or<br/>failing checks" --> rs["make respond"]
+    rs --> m
     m --> ar["make archive<br/>summary, docs, cleanup"]
 ```
 
@@ -78,6 +80,7 @@ mechanical part with a script and starts **your** agent with the instructions of
 | `make verify I=<n>` | Reads the spec | In a new session: checks the spec is consistent, complete and verifiable, and proposes changes. Optional |
 | `make apply I=<n>` | Reads *Affected repos* and creates `feature/<n>-<slug>` (or `fix/`) in worktrees | Implements with TDD in the worktrees and opens one PR per repo |
 | `make review I=<n>` | Gathers the worktrees and the PRs | In a new session, without the implementation's context: reviews the code and checks every acceptance criterion. Report in `.work/<n>/review.md` |
+| `make respond I=<n>` | Lists the open PRs of the issue | Deals with failing checks, conflicts and reviewers' comments: sorts the comments with you, fixes what you accept and drafts the replies, which it posts only with your approval |
 | `make archive I=<n>` | Checks every PR is merged; then posts the summary, closes the issue and removes worktrees, branches and `.work/<n>/` | Writes the final summary. Checks `docs/` and, if something is out of date, opens a PR in the ecosystem repo |
 | `make reject I=<n> REASON="..."` | Closes the open PRs and the issue with the reason, and cleans up. Does nothing if a PR is already merged | — |
 

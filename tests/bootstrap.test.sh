@@ -453,6 +453,20 @@ touch "$eco/.fake/write-summary"
 check "archive: a repo that was a symbolic link is a link to its clone again" 0 \
   bash -c "[[ -L '$eco/api' && \$(git -C '$eco/api' branch --show-current) == main ]]"
 
+# respond
+
+eco="$(setup_built respond-no-open)"
+prs "$eco" api feature/42-export-orders "merged 7 https://host/pull/7"
+check_output "respond: exits 1 when the issue has no open PR" 1 "no open PR" \
+  bash -c "cd '$eco' && ./bootstrap.sh respond 42"
+not_logged "respond: does not start the agent without an open PR" "$eco" agent-calls "respond"
+
+eco="$(setup_built respond-ok)"
+prs "$eco" api feature/42-export-orders $'closed 6 https://host/pull/6\nopen 7 https://host/pull/7'
+check "respond: exits 0 with an open PR" 0 bash -c "cd '$eco' && ./bootstrap.sh respond 42"
+logged "respond: starts the agent with the branch, the worktrees and the open PRs" "$eco" agent-calls \
+  "^AGENT= respond 42 Branch: feature/42-export-orders Worktrees: api/\.worktrees/feature/42-export-orders Open PR of api: 7 https://host/pull/7$"
+
 # reject
 
 eco="$(setup_built reject-no-reason)"

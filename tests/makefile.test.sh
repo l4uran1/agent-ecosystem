@@ -84,7 +84,7 @@ expect "explore works without an idea" "bootstrap explore " explore
 expect "map-review runs bootstrap.sh map-review" "bootstrap map-review" map-review
 expect "propose is a feature by default" "bootstrap propose feature CSV export" propose "IDEA=CSV export"
 expect "propose TYPE=bug proposes a bug fix" "bootstrap propose bug Login loops" propose TYPE=bug "IDEA=Login loops"
-for step in verify apply review archive; do
+for step in verify apply review respond archive; do
   expect "$step I=<n> runs that step for the issue" "bootstrap $step 42" "$step" I=42
   expect_failure "$step without I fails" "$step"
 done

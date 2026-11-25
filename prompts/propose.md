@@ -12,6 +12,9 @@ at the end of this message. If there is no idea, ask what should change.
 - If it affects something users see, read `docs/product/`, especially
   `sensitive-areas.md`.
 - If it is a bug, find the root cause before proposing the fix (`AGENTS.md`).
+- Look for a similar issue: `scripts/host.sh issue-search "<keywords>"`, with several searches
+  if needed. If one matches, show it to the person before going on; if it was closed, with the
+  reason (`scripts/host.sh issue-get <number> comments`).
 - Do not write code or create branches: that is `make apply`.
 
 ## The spec

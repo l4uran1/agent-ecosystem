@@ -75,5 +75,8 @@ what to do with it:
   (`scripts/host.sh issue-get <n> url`).
 - Never approve or merge a PR.
 - Tell the person what was done and which PRs were opened. The next step is
-  `make review I=<n>`. The review holds for the commits it reviewed: if you add more
-  afterwards, tell the person so they can run it again.
+  `make review I=<n>`. Once it finishes, if the person wants, fix here what it found: the
+  report is in `.work/<n>/review.md`. The review holds for the commits it reviewed: if you add
+  more afterwards, tell the person so they can run it again.
+- If the checks fail, there are conflicts or reviewers comment on the PRs, the step is
+  `make respond I=<n>`, in this session or another one.

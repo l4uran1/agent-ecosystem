@@ -33,12 +33,12 @@ called() {
 }
 
 # A fake CLI: logs "<name> <cwd folder> <args>" and prints $FAKE_DIR/<first two args>.out if
-# it exists (e.g. issue-view.out for "gh issue view").
+# it exists (e.g. issue-view.out for "gh issue view"; api-projects.out for "glab api projects/...").
 make_fake() {
   cat > "$TMP/bin/$1" <<'EOF'
 #!/usr/bin/env bash
 echo "$(basename "$0") $(basename "$PWD") $*" >> "$FAKE_LOG"
-out="$FAKE_DIR/$1-$2.out"
+out="$FAKE_DIR/$1-${2%%/*}.out"
 [[ -f "$out" ]] && cat "$out"
 exit "${FAKE_EXIT:-0}"
 EOF
@@ -80,8 +80,20 @@ expect "gh: issue-get body" $'## Affected repos\n- api' "$HOST" issue-get 42 bod
 expect "gh: issue-get labels, one per line" $'bug\nui' "$HOST" issue-get 42 labels
 expect "gh: issue-get url" "https://github.com/acme/eco/issues/42" "$HOST" issue-get 42 url
 expect "gh: issue-get state in lower case" "open" "$HOST" issue-get 42 state
-expect "gh: issue-get with an unknown field fails" "!! Unknown field: owner (title, body, labels, url, state)" \
+expect "gh: issue-get with an unknown field fails" "!! Unknown field: owner (title, body, labels, url, state, comments)" \
   "$HOST" issue-get 42 owner
+
+reset
+printf '%s' '{"comments":[{"author":{"login":"ana"},"body":"Not needed: duplicate of #3"}]}' > "$FAKE_DIR/issue-view.out"
+expect "gh: issue-get comments, with their author" "ana: Not needed: duplicate of #3" "$HOST" issue-get 42 comments
+called "gh: issue-get comments reads them as JSON" "^gh eco issue view 42 --json comments$"
+
+reset
+printf '%s' '[{"number":3,"state":"CLOSED","title":"Export orders to CSV"},{"number":8,"state":"OPEN","title":"CSV for invoices"}]' \
+  > "$FAKE_DIR/issue-list.out"
+expect "gh: issue-search prints state, number and title of every match" \
+  $'closed 3 Export orders to CSV\nopen 8 CSV for invoices' "$HOST" issue-search "csv export"
+called "gh: issue-search looks in every state" "^gh eco issue list --search csv export --state all --limit 30 --json number,state,title$"
 
 reset
 "$HOST" issue-set-body 42 "$TMP/body.md"
@@ -131,6 +143,19 @@ expect "glab: issue-get labels" "bug" "$HOST" issue-get 12 labels
 expect "glab: issue-get url" "https://gitlab.com/acme/eco/-/issues/12" "$HOST" issue-get 12 url
 expect "glab: issue-get state opened is open" "open" "$HOST" issue-get 12 state
 called "glab: issue-get reads the issue as JSON" "^glab eco issue view 12 -F json$"
+
+reset
+printf '%s' '[{"system":true,"author":{"username":"bot"},"body":"changed the description"},{"system":false,"author":{"username":"ana"},"body":"Duplicate of #3"}]' \
+  > "$FAKE_DIR/api-projects.out"
+expect "glab: issue-get comments, without system notes" "ana: Duplicate of #3" "$HOST" issue-get 12 comments
+called "glab: issue-get comments reads the notes through the API" "^glab eco api projects/:id/issues/12/notes\?sort=asc&per_page=100$"
+
+reset
+printf '%s' '[{"iid":3,"state":"closed","title":"Export orders to CSV"},{"iid":8,"state":"opened","title":"CSV for invoices"}]' \
+  > "$FAKE_DIR/issue-list.out"
+expect "glab: issue-search prints state (opened is open), number and title" \
+  $'closed 3 Export orders to CSV\nopen 8 CSV for invoices' "$HOST" issue-search "csv export"
+called "glab: issue-search looks in every state" "^glab eco issue list --search csv export --all --per-page 30 --output json$"
 
 reset
 "$HOST" issue-set-body 12 "$TMP/body.md"
