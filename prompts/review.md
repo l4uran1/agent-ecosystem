@@ -9,6 +9,19 @@ In each worktree (see "Context" at the end), compare the branch with the remote 
 (`git -C <worktree> diff origin/HEAD...HEAD`). Also read the code around the changes: the diff
 alone is not enough.
 
+The rules you judge by are always read from the main branch, never from the branch under
+review: a change cannot modify what judges it.
+
+- `docs/review/<repo>.md` of the ecosystem repo, if it exists: what to look at in that repo's
+  code.
+- `docs/reliability-checklist.md` of the ecosystem repo: apply only the items whose trigger
+  matches the diff.
+
+Both are on the main branch of the ecosystem repo, which is where `make review` runs. Before
+starting, check that the ecosystem repo is on its main branch and up to date
+(`git branch --show-current`, and `git fetch -q origin && git rev-list --count HEAD..origin/HEAD`,
+which must print 0). If not, stop and tell the person: you would be judging with other rules.
+
 1. **Acceptance criteria.** For each one, say whether it is met and show where: the code and
    the test that *How it's verified* asks for. A criterion without that test is not met;
    neither is one proven with a weaker test (a unit test where the spec asks for an end-to-end
@@ -21,8 +34,9 @@ alone is not enough.
 3. **Scope.** What the change does that the spec does not ask for, and what the spec asks for
    that is missing. What the implementer left for another issue is in `.work/<n>/pending.md`:
    it is not a defect if it is there and the spec does not ask for it.
-4. **Rules.** Those of the root `AGENTS.md` and of each repo's: TDD, tests, lint and build.
+4. **Rules.** Those of the root `AGENTS.md`, of `docs/flow.md` and of each repo's `AGENTS.md`: TDD, tests, lint and build.
    Run the repo's tests if you can.
+5. **Reliability checklist.** The items that apply, and whether the change meets them.
 
 Do not change code, do not commit and do not comment on the PRs: the report is for the person.
 
@@ -45,5 +59,6 @@ report against the code: confirm it, correct it or discard it, saying why. Your 
 final one: say which points came from the first review, which you discarded and what you found
 that it missed.
 
-Tell the person the conclusion and the most serious problems. Once every PR is merged, the
-next step is `make archive I=<n>`.
+Tell the person the conclusion and the most serious problems. If reviewers comment on the PRs
+or their checks fail, the step is `eco-respond <n>` (`make respond I=<n>`). Once every PR is
+merged, the next step is `eco-archive <n>` (`make archive I=<n>`).

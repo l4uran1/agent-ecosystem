@@ -17,4 +17,6 @@ context at the end of this message, start from it; otherwise, ask what they want
 - When the idea is clear, sum it up in a few lines: what is wanted, which repos it touches,
   what was decided and why (the discarded alternatives go to the spec's *Context*), the new
   domain terms that are not in `docs/product/glossary.md`, and what is still open. The next
-  step is `make propose IDEA="<summary>"` (with `TYPE=bug` for a bug).
+  step is `eco-propose` with that summary, saying whether it is a bug (from a terminal,
+  `make propose IDEA="<summary>"`, with `TYPE=bug` for a bug): if the person wants to go on in
+  this session, follow it yourself.

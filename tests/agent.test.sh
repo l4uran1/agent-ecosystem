@@ -13,6 +13,10 @@ trap 'rm -rf "$TMP"' EXIT
 
 passed=0 failed=0
 
+# The session mode is tested on purpose below; by default, start a new session as from a terminal.
+unset AGENT METHOD CLAUDECODE CODEX_THREAD_ID CURSOR_AGENT
+export AGENT_SESSION=new LOCAL_MK="$TMP/no-local.mk"
+
 pass() { passed=$((passed + 1)); echo "ok   $1"; }
 fail() {
   failed=$((failed + 1)); echo "FAIL $1 ($2)"
@@ -43,6 +47,7 @@ prompt_lacks() {
 eco="$TMP/eco"
 mkdir -p "$eco/scripts" "$eco/prompts/method/superpowers" "$eco/prompts/method/default" "$TMP/bin"
 cp "$SOURCE" "$eco/scripts/agent.sh"
+cp "$(dirname "$SOURCE")/local-mk.sh" "$eco/scripts/"
 echo "WHAT TO DO IN APPLY" > "$eco/prompts/apply.md"
 echo "WHAT TO DO IN EXPLORE" > "$eco/prompts/explore.md"
 echo "HOW WITH SUPERPOWERS IN APPLY" > "$eco/prompts/method/superpowers/apply.md"
@@ -98,6 +103,46 @@ rm -f "$TMP/prompt"
 check_output "a missing issue fails before starting the agent" 1 "no issue 7" \
   bash -c "AGENT=fake-agent '$eco/scripts/agent.sh' apply 7"
 if [[ -f "$TMP/prompt" ]]; then fail "the agent is not started for a missing issue" "it was" ""; else pass "the agent is not started for a missing issue"; fi
+
+# --- the session the step runs in ---------------------------------------------
+
+rm -f "$TMP/prompt"
+check_output "AGENT_SESSION=current prints the instructions for the calling session" 0 \
+  "follow them in this session" bash -c "AGENT_SESSION=current '$eco/scripts/agent.sh' apply 42"
+check_output "AGENT_SESSION=current prints the whole prompt, with the issue" 0 "Issue #42: Export orders" \
+  bash -c "AGENT_SESSION=current '$eco/scripts/agent.sh' apply 42"
+if [[ -f "$TMP/prompt" ]]; then fail "AGENT_SESSION=current does not start an agent" "it did" ""; else pass "AGENT_SESSION=current does not start an agent"; fi
+for var in CLAUDECODE CODEX_THREAD_ID CURSOR_AGENT; do
+  check_output "from the shell of an agent ($var set), the step stays in that session" 0 "follow them in this session" \
+    bash -c "unset AGENT_SESSION; $var=1 AGENT=fake-agent '$eco/scripts/agent.sh' explore < /dev/null"
+done
+
+# Fakes of the agents' CLIs for AGENT_SESSION=headless: they save their arguments.
+for name in claude codex agent other-agent; do
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s/args"\necho done\n' "$TMP" > "$TMP/bin/$name"
+  chmod +x "$TMP/bin/$name"
+done
+headless() { rm -f "$TMP/args"; (cd /tmp && AGENT_SESSION=headless AGENT="$1" "$eco/scripts/agent.sh" explore > /dev/null); }
+headless claude
+check_output "headless claude: claude -p, without asking for permissions" 0 "^-p --permission-mode bypassPermissions WHAT TO DO IN EXPLORE" \
+  bash -c "head -n 4 '$TMP/args' | paste -sd ' ' -"
+headless codex
+check_output "headless codex: codex exec, without asking for approvals" 0 "^exec$" head -n 1 "$TMP/args"
+check_output "headless codex: bypasses approvals and sandbox" 0 "^--dangerously-bypass-approvals-and-sandbox$" sed -n 2p "$TMP/args"
+headless agent
+check_output "headless Cursor: agent -p --force --trust" 0 "^-p --force --trust$" bash -c "head -n 3 '$TMP/args' | paste -sd ' ' -"
+check_output "headless with an agent it does not know fails" 1 "claude, codex or agent" \
+  bash -c "AGENT_SESSION=headless AGENT=other-agent '$eco/scripts/agent.sh' explore"
+
+# --- local.mk, for steps run without make ---------------------------------------
+
+printf 'AGENT = fake-agent   # or claude\nMETHOD = superpowers\n' > "$TMP/local.mk"
+rm -f "$TMP/prompt"
+(cd /tmp && LOCAL_MK="$TMP/local.mk" "$eco/scripts/agent.sh" apply 42 > /dev/null)
+prompt_has "without make, AGENT and METHOD come from local.mk" "HOW WITH SUPERPOWERS IN APPLY"
+rm -f "$TMP/prompt"
+(cd /tmp && LOCAL_MK="$TMP/local.mk" METHOD=default "$eco/scripts/agent.sh" apply 42 > /dev/null)
+prompt_has "the environment wins over local.mk" "HOW WITH DEFAULT"
 
 echo
 echo "Passed: $passed · Failed: $failed"

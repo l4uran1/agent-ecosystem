@@ -12,6 +12,9 @@ at the end of this message. If there is no idea, ask what should change.
 - If it affects something users see, read `docs/product/`, especially
   `sensitive-areas.md`.
 - If it is a bug, find the root cause before proposing the fix (`AGENTS.md`).
+- Look for a similar issue: `scripts/host.sh issue-search "<keywords>"`, with several searches
+  if needed. If one matches, show it to the person before going on; if it was closed, with the
+  reason (`scripts/host.sh issue-get <number> comments`).
 - Do not write code or create branches: that is `make apply`.
 
 ## The spec
@@ -42,6 +45,8 @@ Write it in `<Draft>/spec.md`, following `templates/spec.md`:
 4. If the spec touches contracts or sensitive areas, remind the person to ask someone on the
    team to review the issue before implementing it.
 5. Give them the number and the link (`scripts/host.sh issue-get <number> url`). The next
-   steps are `make verify I=<number>` (optional) and `make apply I=<number>`.
+   steps are `eco-verify <number>` (optional; it opens a separate session) and
+   `eco-apply <number>`, which you can follow yourself if the person wants to go on in this
+   session. From a terminal: `make verify I=<number>` and `make apply I=<number>`.
 
 Drafts in `.work/` are never committed.

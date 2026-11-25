@@ -25,7 +25,10 @@ issue for whoever reads it in a year:
   out.
 
 Show it to the person and wait until they approve it before finishing. Without that file, the
-script does not close the issue.
+script does not close the issue. If you got these instructions as the output of
+`./bootstrap.sh archive` in your own session, once the person approves the summary run
+`./bootstrap.sh archive <n>` again: with the summary written, it publishes it and closes the
+issue.
 
 ## The shared documentation
 
@@ -50,14 +53,15 @@ not know, a failure only the review saw): in `.work/<n>/` (above all `review.md`
 comments and, if the issue was built in this session, in the conversation. For each case,
 propose to the person how to avoid it next time: if the mistake is mechanical, a check that
 catches it (a test, a lint rule, `./bootstrap.sh doctor`); if it is one of judgement, a line in
-the `AGENTS.md` it belongs to. What they accept goes in a PR of the repo that file lives in:
-the documentation PR above for the ecosystem's files. If there is nothing, say nothing.
+`docs/review/<repo>.md` or in the `AGENTS.md` it belongs to. What they accept goes in a PR of
+the repo that file lives in: the documentation PR above for the ecosystem's files. If there is
+nothing, say nothing.
 
 ## If the issue is a bug
 
 Check its labels with `scripts/host.sh issue-get <n> labels`. If it is a bug, ask yourself
 whether it could have been seen in the diff that introduced it: a concrete pattern in a
-concrete file. If so, propose to the person a review rule for the `AGENTS.md` of that repo,
-with the pattern to look for and the issue it comes from. If they accept it, it goes in a PR
-of that repo, made from a worktree of it. If it could not be seen in a diff (it depended on
-data or on production), propose nothing and say so in the summary.
+concrete file. If so, propose to the person a new item for `docs/reliability-checklist.md`,
+in that file's format. If they accept it, it goes in the same documentation PR as above. If it
+could not be seen in a diff (it depended on data or on production), propose nothing and say so
+in the summary.

@@ -7,7 +7,10 @@
 #                                  create an issue in the ecosystem repo and print its number.
 #                                  A bug gets the label "bug" (created if it does not exist)
 #   issue-get <n> <field>          print a field of issue <n>: title, body, labels (one per
-#                                  line), url or state (open or closed)
+#                                  line), url, state (open or closed) or comments ("<author>:
+#                                  <text>", oldest first)
+#   issue-search <text>            issues of the ecosystem repo that match <text>, in any state,
+#                                  one per line: "<open|closed> <number> <title>"
 #   issue-set-body <n> <file>      replace the body of issue <n> (the spec)
 #   issue-comment <n> <file>       comment on issue <n>
 #   issue-close <n> <completed|not-planned>
@@ -17,12 +20,15 @@
 #                                  comment on a PR of <repo> and close it
 #   check-auth                     check the CLI is installed and logged in
 #
-# Issues live in the ecosystem repo; PRs in each service repo. GIT_HOST picks the CLI (gh or
-# glab); by default, glab if the ecosystem repo's origin URL contains "gitlab", gh otherwise.
+# Issues live in the ecosystem repo; PRs in each service repo. GIT_HOST (environment or
+# local.mk) picks the CLI (gh or glab); by default, glab if the ecosystem repo's origin URL contains "gitlab", gh otherwise.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/local-mk.sh
+source "$ROOT/scripts/local-mk.sh"
+load_local_mk
 
 die() { echo "!! $*" >&2; exit 1; }
 
@@ -65,6 +71,16 @@ issue_create() {
 issue_get() {
   local n="$1" field="$2" filter
   cd "$ROOT"
+  if [[ "$field" == comments ]]; then
+    if [[ "$host" == gh ]]; then
+      gh issue view "$n" --json comments | jq -r '.comments[] | "\(.author.login): \(.body)"'
+    else
+      # Notes through the API: glab issue view has no JSON for them. System notes are GitLab's own.
+      glab api "projects/:id/issues/$n/notes?sort=asc&per_page=100" \
+        | jq -r '.[] | select(.system | not) | "\(.author.username): \(.body)"'
+    fi
+    return
+  fi
   if [[ "$host" == gh ]]; then
     case "$field" in
       title) filter='.title' ;;
@@ -72,7 +88,7 @@ issue_get() {
       labels) filter='.labels[].name' ;;
       url) filter='.url' ;;
       state) filter='.state | ascii_downcase' ;;
-      *) die "Unknown field: $field (title, body, labels, url, state)" ;;
+      *) die "Unknown field: $field (title, body, labels, url, state, comments)" ;;
     esac
     gh issue view "$n" --json title,body,labels,url,state | jq -r "$filter"
   else
@@ -82,9 +98,21 @@ issue_get() {
       labels) filter='.labels[]' ;;
       url) filter='.web_url' ;;
       state) filter='if .state == "opened" then "open" else .state end' ;;
-      *) die "Unknown field: $field (title, body, labels, url, state)" ;;
+      *) die "Unknown field: $field (title, body, labels, url, state, comments)" ;;
     esac
     glab issue view "$n" -F json | jq -r "$filter"
+  fi
+}
+
+issue_search() {
+  cd "$ROOT"
+  if [[ "$host" == gh ]]; then
+    gh issue list --search "$1" --state all --limit 30 --json number,state,title \
+      | jq -r '.[] | "\(.state | ascii_downcase) \(.number) \(.title)"'
+  else
+    # --output, not -F: in glab issue list, -F is another flag.
+    glab issue list --search "$1" --all --per-page 30 --output json \
+      | jq -r '.[] | "\(if .state == "opened" then "open" else .state end) \(.iid) \(.title)"'
   fi
 }
 
@@ -147,6 +175,7 @@ cmd="${1:-}"; shift || true
 case "$cmd" in
   issue-create) [[ $# -eq 3 ]] || usage; issue_create "$@" ;;
   issue-get) [[ $# -eq 2 ]] || usage; issue_get "$@" ;;
+  issue-search) [[ $# -eq 1 ]] || usage; issue_search "$@" ;;
   issue-set-body) [[ $# -eq 2 ]] || usage; issue_set_body "$@" ;;
   issue-comment) [[ $# -eq 2 ]] || usage; issue_comment "$@" ;;
   issue-close) [[ $# -eq 2 ]] || usage; issue_close "$@" ;;

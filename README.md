@@ -62,6 +62,8 @@ flowchart LR
     v --> a["make apply<br/>worktrees, TDD,<br/>one PR per repo"]
     a --> r["make review<br/>new session"]
     r --> m["A person reviews<br/>and merges the PRs"]
+    m -- "comments or<br/>failing checks" --> rs["make respond"]
+    rs --> m
     m --> ar["make archive<br/>summary, docs, cleanup"]
 ```
 
@@ -78,11 +80,21 @@ mechanical part with a script and starts **your** agent with the instructions of
 | `make verify I=<n>` | Reads the spec | In a new session: checks the spec is consistent, complete and verifiable, and proposes changes. Optional |
 | `make apply I=<n>` | Reads *Affected repos* and creates `feature/<n>-<slug>` (or `fix/`) in worktrees | Implements with TDD in the worktrees and opens one PR per repo |
 | `make review I=<n>` | Gathers the worktrees and the PRs | In a new session, without the implementation's context: reviews the code and checks every acceptance criterion. Report in `.work/<n>/review.md` |
+| `make respond I=<n>` | Lists the open PRs of the issue | Deals with failing checks, conflicts and reviewers' comments: sorts the comments with you, fixes what you accept and drafts the replies, which it posts only with your approval |
 | `make archive I=<n>` | Checks every PR is merged; then posts the summary, closes the issue and removes worktrees, branches and `.work/<n>/` | Writes the final summary. Checks `docs/` and, if something is out of date, opens a PR in the ecosystem repo |
 | `make reject I=<n> REASON="..."` | Closes the open PRs and the issue with the reason, and cleans up. Does nothing if a PR is already merged | — |
 
-Between `review` and `archive`, a person reviews and merges the code PRs. The full rules are
-in `AGENTS.md`.
+Between `review` and `archive`, a person reviews and merges the code PRs. The rules for the
+agent are in `docs/flow.md` (this workflow) and `AGENTS.md` (any workflow).
+
+**From your agent**, each step is also a skill of the ecosystem repo (`.agents/skills/`,
+linked from `.claude/skills/`): type `/eco-<step> <arguments>` in Claude Code or Cursor, or
+`$eco-<step>` in Codex, e.g. `/eco-apply 42`. Run from an agent, the step does not open another
+agent: it prints its instructions and that same session follows them, so you can go from
+`explore` to `propose` to `apply` without leaving it. `eco-verify` and `eco-review` are the
+exception: they need eyes that did not write the spec or the code, so they open a separate
+session without a UI, and your session presents its report. The skills only start when you
+name them.
 
 <details>
 <summary><b>Bugs, spec changes, sensitive areas and dropping a change</b></summary>
@@ -113,7 +125,7 @@ in `AGENTS.md`.
 Each person sets their tools in `local.mk`, at the ecosystem root. Git ignores it.
 
 ```make
-AGENT = claude            # the command that starts your agent with a first message: claude, codex...
+AGENT = claude            # the command that starts your agent with a first message: claude, codex, agent (Cursor)...
 METHOD = default          # how your agent works: default, openspec or superpowers
 AGENT_REVIEWER = codex    # optional: a second agent that reviews first in make review
 ```
@@ -124,6 +136,16 @@ AGENT_REVIEWER = codex    # optional: a second agent that reviews first in make 
   the issue and temporary documents go in `.work/<n>/`.
 - **`AGENT_REVIEWER`**: if set to another agent, `make review` runs it first; then your agent
   checks its report against the code and writes the final one. Two models catch more than one.
+- **The session a step runs in** (`AGENT_SESSION`): `new` from a terminal, `current` from the
+  shell of an agent (detected), and `headless` for the separate session of `eco-verify` and
+  `eco-review`. A headless session has nobody to answer its prompts, so it runs **without
+  asking for permissions** (`claude -p --permission-mode bypassPermissions`,
+  `codex exec --dangerously-bypass-approvals-and-sandbox`, `agent -p --force`). Only
+  `claude`, `codex` and `agent` (the Cursor CLI) can run headless. If you do not want an
+  unattended agent with those permissions on your machine, run `make verify` and `make review`
+  from a terminal instead.
+- **Without make** (a skill runs `./bootstrap.sh` directly), the scripts read the same
+  settings from `local.mk` (`scripts/local-mk.sh`). The environment wins over the file.
 
 </details>
 
@@ -155,19 +177,44 @@ make archive I=42
 
 </details>
 
+## With a workflow of your own
+
+If you already work with a workflow of your own (other skills, another tracker...), you can
+still use the ecosystem repo for what is shared: `AGENTS.md`, the system map, the product
+context and the `make` commands. Tell your agent once, in a personal file git does not share:
+
+| Agent | File | Content |
+| --- | --- | --- |
+| Claude Code | `CLAUDE.local.md` at the ecosystem root | `I work with my own workflow: do not follow docs/flow.md.` |
+| Codex | `~/.codex/AGENTS.md` | The same sentence |
+| Cursor | *Settings › Rules › User Rules* | The same sentence |
+
+In Codex, do not use `AGENTS.override.md`: it replaces `AGENTS.md`, and the agent loses the
+shared rules.
+
+The `eco-*` skills only start when you name them, so they do not get in your way. What holds
+with any workflow is in `AGENTS.md`: among other things, that every change has an issue with
+its title on each PR, that someone else reviews the spec of a change to a sensitive area before
+it is built, and that you update `docs/system-map.md` when you change a contract.
+
 ## What's in the template
 
 ```
 your-ecosystem/                 ← this template
 ├── AGENTS.md                   ← shared rules for every agent
 ├── CLAUDE.md                   ← imports AGENTS.md for Claude Code
+├── .agents/skills/            ← one skill per workflow step (eco-*), linked from .claude/skills/
 ├── bootstrap.sh                ← clones the repos, creates worktrees, runs the workflow
 ├── Makefile                    ← make shortcuts for bootstrap.sh and every repo
 ├── repos.txt                   ← list of service repos
 ├── prompts/                    ← what the agent does in each step, and per method
 ├── scripts/                    ← agent.sh starts your agent; host.sh talks to GitHub or GitLab
 ├── docs/
+│   ├── flow.md                 ← the team's workflow, for the agent
 │   ├── system-map.md           ← contracts between services
+│   ├── reliability-checklist.md ← failures already seen, that can be spotted in a diff
+│   ├── review/                 ← per repo: what to review more carefully
+│   ├── verify/                 ← per repo: how to run a branch to verify a change
 │   └── product/                ← sensitive areas, constraints, glossary, decisions
 ├── templates/                  ← the spec; per-repo AGENTS.md, CLAUDE.md, PR template
 ├── tests/                      ← tests for bootstrap.sh, scripts/ and the Makefile
@@ -182,6 +229,9 @@ your-ecosystem/                 ← this template
   agent in a single repo can never see.
 - **Product context** (`docs/product/`): sensitive areas, external constraints, glossary
   and decisions — what cannot be read in the code.
+- **Review and verification rules** (`docs/reliability-checklist.md`, `docs/review/`,
+  `docs/verify/`): what `make review` checks besides the spec, and how to run a change instead
+  of trusting its tests. They grow from the failures that reach `make archive`.
 - **The workflow** (`prompts/`, `scripts/`, `bootstrap.sh`): one issue per change, even when
   it spans several repos, and one command per step, whatever agent each person uses.
 
@@ -195,9 +245,11 @@ which you can also run directly.
 | `make sync` | `./bootstrap.sh` | Clones missing repos and brings every repo's main branch up to date, whatever branch you are on |
 | `make sync-all` | `./bootstrap.sh --all` | Same, including optional repos |
 | `make status` | `./bootstrap.sh status` | Branch and state of every repo and of its worktrees |
+| `make prune` | `./bootstrap.sh prune` | Removes the worktrees already merged and clean, with their local branch (`make status` lists them) |
 | `make branch I=<n>` | `./bootstrap.sh branch <n>` | Creates the branch of issue `<n>` in worktrees of the repos of its *Affected repos*, without starting the agent |
 | `make branch NAME=<branch> REPOS="<repo> ..."` | `./bootstrap.sh branch <branch> <repo>...` | Creates the branch in a worktree `<repo>/.worktrees/<branch>` of each repo, without touching its main checkout: from the remote branch if someone already pushed it, otherwise from the main branch. If the worktree already exists, says where. A `<repo>` that is a symbolic link is replaced by the worktree at that same path |
-| `make doctor` | `./bootstrap.sh doctor` | Checks the ecosystem repo is filled in and set up: placeholders, TODOs, system map age, files left out, the git host CLI, and that it is on its main branch, up to date |
+| `make map-review` | `./bootstrap.sh map-review` | Your agent reviews `docs/system-map.md` against the code of every repo and opens a PR of the ecosystem repo (no issue). `make doctor` warns after 90 days |
+| `make doctor` | `./bootstrap.sh doctor` | Checks the ecosystem repo is filled in and set up: placeholders, TODOs, system map age, files left out, the git host CLI, `origin/HEAD`, and that it is on its main branch, up to date |
 | `make tests` | `./bootstrap.sh tests` | Runs the tests of `bootstrap.sh`, `scripts/` and the Makefile, and shellcheck if installed |
 | `make <repo>/<target>` | — | Runs `make <target>` in that repo from the root, e.g. `make api/test` |
 
@@ -205,7 +257,8 @@ which you can also run directly.
 
 - **On the main branch, clean:** pulls.
 - **On another branch:** updates your local main branch in the background, without moving you.
-- **On the main branch with uncommitted changes:** only fetches; pull once you commit.
+- **On the main branch with uncommitted changes:** fast-forwards it if the new commits do not
+  touch your files; if they do, touches nothing and names the files.
 
 <details>
 <summary><b>If you use an SSH alias or HTTPS</b></summary>
@@ -246,7 +299,7 @@ git config --global url."https://github.com/".insteadOf "git@github.com:"
 
 - Bash (macOS, Linux, or WSL / Git Bash on Windows) and git 2.31+.
 - `gh` (GitHub) or `glab` (GitLab), logged in, and `jq`.
-- An agent CLI that takes a first message as an argument (`claude`, `codex`...).
+- An agent CLI that takes a first message as an argument (`claude`, `codex`, `agent` of Cursor...).
 - `make` for the shortcuts (optional: `./bootstrap.sh` does the same).
 
 ## License

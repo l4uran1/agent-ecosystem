@@ -47,10 +47,12 @@ Read it BEFORE proposing or implementing a change that:
 - reads or writes database tables owned by another service,
 - touches authentication or credentials shared between services.
 
-If your change creates, modifies or removes one of those contracts, say so in the
-*Contracts and sensitive areas* section of the spec. `make archive` checks at the end
-whether `docs/system-map.md` must change. Do not read it for changes that stay inside a
-single service.
+If your change creates, modifies or removes one of those contracts, say so in its spec and,
+once it is done, update `docs/system-map.md` (in the team's workflow, `make archive` checks
+it). Do not read it for changes that stay inside a single service.
+
+The full review of the map against the code, without an issue, is `make map-review`.
+`./bootstrap.sh doctor` warns when the map has not been reviewed for 90 days.
 
 ## Product context
 
@@ -59,35 +61,22 @@ decisions. Read it when a change affects user-visible behaviour.
 
 The sensitive areas are listed in `docs/product/sensitive-areas.md`, and only there. A
 change that touches one, however small it looks, needs someone else on the team to review
-its spec on the issue before it is built.
+its spec on the issue before it is built, whatever the workflow.
 
 ## Workflow
 
-Every change, feature or bug, has an issue in the ecosystem repo whose body is the spec,
-written with `templates/spec.md`. The steps are in `README.md`: `make explore`, `propose`,
-`verify`, `apply`, `review`, `archive` and `reject`. Each one starts the person's agent with
-the instructions of `prompts/<step>.md`.
+The team's workflow is in `docs/flow.md`: each change has an issue in the ecosystem repo whose
+body is the spec, and it is worked on with the `eco-*` skills. Read it before starting a change
+and follow it, unless the person works with a workflow of their own: they will tell you, or
+their personal instructions will (see "With a workflow of your own" in `README.md`). Then
+follow theirs. The rest of this file applies with any workflow.
 
-- The spec on the issue is the only source of what gets built. Do not write design documents
-  in the repos or in the ecosystem repo.
-- Temporary documents (drafts, plans, reports) go in `.work/<n>/`, which git ignores.
-  `make archive` and `make reject` delete it.
-- If the spec has to change during the implementation, say so before going on. Then update
-  the issue body (`scripts/host.sh issue-set-body`) and explain the change in a comment
-  (`scripts/host.sh issue-comment`).
-- Each affected repo gets its own PR, with the issue title in its title and the link to the
-  issue in its description.
-- OpenSpec and Superpowers are optional methods (`METHOD` in `local.mk`): they help to think,
-  write and build, but the result goes on the issue. Do not use `/opsx:propose` or
-  `/opsx:archive`.
-
-## Abandoning a change
-
-- Run `make reject I=<n> REASON="<reason>"`: it closes the open PRs with the reason, posts it
-  on the issue, closes the issue as not planned and removes worktrees, branches and
-  `.work/<n>/`. Anyone who wants to keep the work saves it first.
-- If a PR is already merged, `make reject` does nothing: first open a PR in that repo that
-  reverts it, following the spec's *Rollback*.
+- Every change has an issue in the ecosystem repo. Each affected repo gets its own PR, with the
+  issue title in its title and the link to the issue in its description. Only the upkeep of the
+  ecosystem repo itself (`chore/` branches, `make map-review`) goes without an issue.
+- The `eco-*` skills do not start on their own: only when the person names them. Never start a
+  step of the workflow the person did not ask for.
+- Never approve or merge a PR: a person does.
 
 ## TDD and verification (always)
 
@@ -97,16 +86,16 @@ the instructions of `prompts/<step>.md`.
 - Do not mark a task as done without running the tests, lint and build of the affected
   repo. If something fails, fix it or say so; never hide it or disable a test.
 - Verifying also means running the change: start whatever it needs and check that it does
-  what the spec says. Passing tests is not enough.
+  what the spec says (`docs/verify/<repo>.md`, if it exists). Passing tests is not enough.
 - If something still fails after three attempts to fix it, stop and tell the person what you
   tried. Do not keep trying blindly.
 - A flaky test (one that sometimes passes and sometimes does not) is investigated like a bug.
   Never add waits or retries to it, or skip it, to make it pass. If you cannot find the cause,
   stop and tell the person; only with their agreement, delete it and explain why in the commit
   and in the PR.
-- The rules a change is judged by (this file, each repo's `AGENTS.md`, `prompts/`) are read
-  from the main branch of the ecosystem repo. Do not change them in the same branch as the code
-  they judge.
+- The rules a change is judged by (this file, each repo's `AGENTS.md`, `prompts/`,
+  `docs/review/<repo>.md`, `docs/reliability-checklist.md`) are read from the main branch of the
+  ecosystem repo. Do not change them in the same branch as the code they judge.
 - Commit each change in the repo it belongs to. Never mix several repos in one commit.
 
 ## Bugs
@@ -121,9 +110,6 @@ the instructions of `prompts/<step>.md`.
 - Tag debugging logs with `[DEBUG-<n>]` and remove them before committing
   (`git grep '\[DEBUG-'` must find nothing).
 - First write a test that reproduces the bug and watch it fail.
-- Its issue is labelled `bug` (`make propose TYPE=bug`) and its branch is `fix/<n>-<slug>`.
-  If the issue already exists without the template, complete its body with it before
-  `make apply`.
 
 ## Reviewing someone else's PR
 

@@ -15,6 +15,17 @@ export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 
 passed=0 failed=0
 
+# The steps start a new agent session, as from a terminal, unless a test says otherwise.
+unset CLAUDECODE CODEX_THREAD_ID CURSOR_AGENT
+export AGENT_SESSION=new
+
+# copy_bootstrap <eco>: bootstrap.sh and the script it sources, as in the real ecosystem repo.
+copy_bootstrap() {
+  mkdir -p "$1/scripts"
+  cp "$SCRIPT" "$1/"
+  cp "$(dirname "$SCRIPT")/scripts/local-mk.sh" "$1/scripts/"
+}
+
 # Creates a fresh ecosystem folder with two cloned repos (api, web) whose remotes are
 # local repos on main. Prints the ecosystem folder.
 setup() {
@@ -25,10 +36,12 @@ setup() {
     git -C "$case_dir/remote-$r" commit -q --allow-empty -m init
     printf '%s file://%s core\n' "$r" "$case_dir/remote-$r" >> "$case_dir/eco/repos.txt"
   done
-  cp "$SCRIPT" "$case_dir/eco/"
+  copy_bootstrap "$case_dir/eco"
   (cd "$case_dir/eco" && ./bootstrap.sh > /dev/null 2>&1)
   echo "$case_dir/eco"
 }
+
+has_branch() { git -C "$1" show-ref --verify --quiet "refs/heads/$2"; }
 
 pass() { passed=$((passed + 1)); echo "ok   $1"; }
 
@@ -153,6 +166,46 @@ rm -rf "$eco/../remote-api"
 check "branch: exits non-zero when the remote cannot be fetched" 1 \
   bash -c "cd '$eco' && ./bootstrap.sh branch feature/x api web"
 
+# --- prune: worktrees already merged -----------------------------------------
+
+# merged <eco> <repo> <branch>: a worktree of <branch> with one commit, merged on the remote's
+# main branch without fast-forward (as PRs are), then fetched.
+merged() {
+  local eco="$1" repo="$2" branch="$3"
+  (cd "$eco" && ./bootstrap.sh branch "$branch" "$repo" > /dev/null 2>&1)
+  git -C "$eco/$repo/.worktrees/$branch" commit -q --allow-empty -m "work on $branch"
+  git -C "$eco/$repo/.worktrees/$branch" push -q origin "$branch" 2> /dev/null
+  git -C "$eco/../remote-$repo" merge -q --no-ff "$branch" -m "Merge $branch"
+  git -C "$eco/$repo" fetch -q origin
+}
+
+eco="$(setup prune)"
+merged "$eco" api feature/1-done
+merged "$eco" web feature/2-dirty
+touch "$eco/web/.worktrees/feature/2-dirty/new"
+(cd "$eco" && ./bootstrap.sh branch feature/3-new api > /dev/null 2>&1)
+out="$(cd "$eco" && ./bootstrap.sh status | sed -n '/make prune/,$p')"
+check "status: lists the worktrees already merged and clean" 0 grep -qF "api/.worktrees/feature/1-done" <<< "$out"
+check "status: does not list a merged worktree with uncommitted changes" 1 grep -qF "2-dirty" <<< "$out"
+check "status: does not list a worktree without commits of its own" 1 grep -qF "3-new" <<< "$out"
+(cd "$eco" && ./bootstrap.sh prune > /dev/null)
+check "prune: removes the worktrees already merged and clean" 1 test -e "$eco/api/.worktrees/feature/1-done"
+check "prune: deletes their local branch" 1 has_branch "$eco/api" feature/1-done
+check "prune: keeps a merged worktree with uncommitted changes" 0 test -e "$eco/web/.worktrees/feature/2-dirty/new"
+check "prune: keeps a worktree without commits of its own" 0 test -d "$eco/api/.worktrees/feature/3-new"
+check_absent "status: does not mention prune when nothing is merged" "make prune" \
+  bash -c "cd '$eco' && ./bootstrap.sh status"
+
+eco="$(setup prune-moved-on)"
+merged "$eco" api feature/4-goes-on
+git -C "$eco/api/.worktrees/feature/4-goes-on" branch -q -u origin/feature/4-goes-on
+git -C "$eco/../remote-api" switch -q feature/4-goes-on
+git -C "$eco/../remote-api" commit -q --allow-empty -m "more work after the merge"
+git -C "$eco/../remote-api" switch -q main
+git -C "$eco/api" fetch -q origin
+check_absent "status: does not list a merged worktree whose remote branch moved on" "4-goes-on" \
+  bash -c "cd '$eco' && ./bootstrap.sh status | sed -n '/make prune/,\$p'"
+
 # --- the workflow, with issues ------------------------------------------------
 # scripts/host.sh and scripts/agent.sh are fakes: the host answers from .fake/ and logs every
 # call, and the agent logs its arguments and, if asked, writes the file a step expects.
@@ -222,7 +275,6 @@ not_logged() {
   else pass "$1"; fi
 }
 
-has_branch() { git -C "$1" show-ref --verify --quiet "refs/heads/$2"; }
 
 # branch <n>
 
@@ -271,6 +323,10 @@ eco="$(setup_flow flow-explore)"
 (cd "$eco" && ./bootstrap.sh explore "CSV export" > /dev/null 2>&1)
 logged "explore: starts the agent with the idea" "$eco" agent-calls "^AGENT= explore Idea: CSV export$"
 
+eco="$(setup_flow flow-map-review)"
+(cd "$eco" && ./bootstrap.sh map-review > /dev/null 2>&1)
+logged "map-review: starts the agent with the map-review step, without an issue" "$eco" agent-calls "^AGENT= map-review$"
+
 eco="$(setup_flow flow-propose)"
 (cd "$eco" && ./bootstrap.sh propose bug "Login loops" > /dev/null 2>&1)
 logged "propose: starts the agent with the type, a draft folder in .work/ and the idea" "$eco" agent-calls \
@@ -282,7 +338,25 @@ check_output "propose: exits 1 with an unknown type" 1 "feature.bug" \
 eco="$(setup_flow flow-verify)"
 issue "$eco" 42 "Export orders" api
 (cd "$eco" && ./bootstrap.sh verify 42 > /dev/null 2>&1)
-logged "verify: starts the agent with the issue" "$eco" agent-calls "^AGENT= verify 42$"
+logged "verify: starts the agent with the issue and the path of its report" "$eco" agent-calls "^AGENT= verify 42 Report: \.work/42/verify\.md$"
+
+for step in verify review; do
+  eco="$(setup_flow "flow-$step-current")"
+  issue "$eco" 42 "Export orders" api
+  check_output "$step: refuses to run inside the calling agent's session" 1 "needs a clean session" \
+    bash -c "cd '$eco' && AGENT_SESSION=current ./bootstrap.sh $step 42"
+  not_logged "$step: does not start the agent inside the calling session" "$eco" agent-calls "$step"
+done
+
+eco="$(setup_flow flow-verify-headless)"
+issue "$eco" 42 "Export orders" api
+touch "$eco/.fake/write-report"
+check_output "verify headless: tells the calling session to present the report" 0 "follow \"With the person\"" \
+  bash -c "cd '$eco' && AGENT_SESSION=headless ./bootstrap.sh verify 42"
+logged "verify headless: the agent only reviews, with nobody to talk to" "$eco" agent-calls "^AGENT= verify 42 Report: \.work/42/verify\.md No person: "
+rm "$eco/.fake/write-report"
+check_output "verify headless: fails when the agent leaves no report" 1 "no report" \
+  bash -c "cd '$eco' && AGENT_SESSION=headless ./bootstrap.sh verify 42"
 check_output "verify: exits 1 without an issue number" 1 "verify 42" \
   bash -c "cd '$eco' && ./bootstrap.sh verify abc"
 
@@ -372,6 +446,28 @@ check "archive: deletes the local branch" 1 has_branch "$eco/api" feature/42-exp
 check "archive: deletes the remote branch" 1 has_branch "$eco/../remote-api" feature/42-export-orders
 check "archive: deletes .work/<n>/" 1 test -d "$eco/.work/42"
 
+eco="$(setup_built archive-closed)"
+prs "$eco" api feature/42-export-orders "merged 7 https://host/pull/7"
+echo closed > "$eco/.fake/issues/42/state"
+check_output "archive: an issue already closed is only cleaned up" 0 "#42 was already closed" \
+  bash -c "cd '$eco' && ./bootstrap.sh archive 42"
+not_logged "archive: does not start the agent for an issue already closed" "$eco" agent-calls "archive"
+not_logged "archive: does not comment on or close an issue already closed" "$eco" host-calls "issue-(comment|close)"
+check "archive: removes the worktree of an issue already closed" 1 test -d "$eco/api/.worktrees/feature/42-export-orders"
+
+eco="$(setup_built archive-current)"
+prs "$eco" api feature/42-export-orders "merged 7 https://host/pull/7"
+check "archive in an agent's session: first prints the instructions and stops" 0 \
+  bash -c "cd '$eco' && AGENT_SESSION=current ./bootstrap.sh archive 42"
+logged "archive in an agent's session: passes the step to the agent" "$eco" agent-calls "^AGENT= archive 42 "
+not_logged "archive in an agent's session: the issue stays open until the summary exists" "$eco" host-calls "issue-close"
+check "archive in an agent's session: nothing is removed yet" 0 test -d "$eco/api/.worktrees/feature/42-export-orders"
+echo "h2. Built" > "$eco/.work/42/summary.md"
+rm "$eco/.fake/agent-calls"
+check_output "archive in an agent's session: run again with the summary, it closes the issue" 0 "#42 closed" \
+  bash -c "cd '$eco' && AGENT_SESSION=current ./bootstrap.sh archive 42"
+not_logged "archive in an agent's session: the second run does not ask the agent again" "$eco" agent-calls "archive"
+
 eco="$(setup_built archive-dirty)"
 prs "$eco" api feature/42-export-orders "merged 7 https://host/pull/7"
 touch "$eco/.fake/write-summary"
@@ -399,10 +495,24 @@ touch "$eco/.fake/write-summary"
 check "archive: a repo that was a symbolic link is a link to its clone again" 0 \
   bash -c "[[ -L '$eco/api' && \$(git -C '$eco/api' branch --show-current) == main ]]"
 
+# respond
+
+eco="$(setup_built respond-no-open)"
+prs "$eco" api feature/42-export-orders "merged 7 https://host/pull/7"
+check_output "respond: exits 1 when the issue has no open PR" 1 "no open PR" \
+  bash -c "cd '$eco' && ./bootstrap.sh respond 42"
+not_logged "respond: does not start the agent without an open PR" "$eco" agent-calls "respond"
+
+eco="$(setup_built respond-ok)"
+prs "$eco" api feature/42-export-orders $'closed 6 https://host/pull/6\nopen 7 https://host/pull/7'
+check "respond: exits 0 with an open PR" 0 bash -c "cd '$eco' && ./bootstrap.sh respond 42"
+logged "respond: starts the agent with the branch, the worktrees and the open PRs" "$eco" agent-calls \
+  "^AGENT= respond 42 Branch: feature/42-export-orders Worktrees: api/\.worktrees/feature/42-export-orders Open PR of api: 7 https://host/pull/7$"
+
 # reject
 
 eco="$(setup_built reject-no-reason)"
-check_output "reject: exits 1 without a reason" 1 "reason" \
+check_output "reject: exits 1 without a reason" 1 "Give the reason: reject 42" \
   bash -c "cd '$eco' && ./bootstrap.sh reject 42"
 
 eco="$(setup_built reject-merged)"
@@ -442,6 +552,24 @@ echo wip > "$eco/web/wip"
 check "sync: exits 0 and leaves uncommitted changes on main alone" 0 \
   bash -c "cd '$eco' && ./bootstrap.sh > /dev/null && [[ \$(cat web/wip) == wip ]]"
 
+eco="$(setup sync-dirty-main-ff)"
+echo wip > "$eco/web/wip"
+git -C "$eco/../remote-web" commit -q --allow-empty -m c2
+check "sync: updates a main with uncommitted changes when the new commits do not touch them" 0 \
+  bash -c "cd '$eco' && ./bootstrap.sh > /dev/null && [[ \$(cat web/wip) == wip ]] \
+    && [[ \$(git -C web rev-parse HEAD) == \$(git -C ../remote-web rev-parse main) ]]"
+
+eco="$(setup sync-dirty-main-clash)"
+remote="$eco/../remote-web"
+echo v1 > "$remote/f" && git -C "$remote" add f && git -C "$remote" commit -q -m f1
+(cd "$eco" && ./bootstrap.sh > /dev/null)
+echo mine > "$eco/web/f"
+echo v2 > "$remote/f" && git -C "$remote" commit -q -am f2
+check_output "sync: names the files when uncommitted changes on main clash with the new commits" 0 "^      f$" \
+  bash -c "cd '$eco' && ./bootstrap.sh"
+check "sync: leaves clashing uncommitted changes on main untouched" 0 \
+  bash -c "[[ \$(cat '$eco/web/f') == mine ]]"
+
 eco="$(setup sync-fetch-fails)"
 rm -rf "$eco/../remote-web"
 check "sync: exits non-zero when a remote cannot be reached" 1 \
@@ -450,7 +578,7 @@ check "sync: exits non-zero when a remote cannot be reached" 1 \
 # --- tests ----------------------------------------------------------------
 
 eco="$TMP/tests-cmd"
-mkdir -p "$eco/tests" && cp "$SCRIPT" "$eco/"
+mkdir -p "$eco/tests" && copy_bootstrap "$eco"
 printf '#!/usr/bin/env bash\necho fake suite ran\nexit 3\n' > "$eco/tests/bootstrap.test.sh"
 chmod +x "$eco/tests/bootstrap.test.sh"
 check_output "tests: runs the test suite and returns its exit code" 3 "fake suite ran" \
@@ -467,7 +595,7 @@ setup_filled() {
   local eco="$TMP/$1/eco"
   mkdir -p "$eco/docs/product/decisions" "$eco/scripts" "$eco/api/.git"
   git init -q -b main "$eco"
-  cp "$SCRIPT" "$(dirname "$SCRIPT")/.gitignore" "$eco/"
+  copy_bootstrap "$eco" && cp "$(dirname "$SCRIPT")/.gitignore" "$eco/"
   echo "api git@example.com:acme/api.git core" > "$eco/repos.txt"
   printf '# Acme ecosystem\n\nMain branch: main. Branches: feature/<n>-<slug>.\n' > "$eco/AGENTS.md"
   printf 'schema: spec-driven\ncontext: |\n  Product: invoicing for small shops.\n' > "$eco/openspec/config.yaml"
@@ -509,8 +637,8 @@ check_output "doctor: warns when the git host CLI is not logged in" 0 "gh is not
 eco="$(setup_filled doctor-temporary)"
 mkdir -p "$eco/.work/42" "$eco/docs/superpowers" "$eco/openspec/changes/42" "$eco/.worktrees/docs" "$eco/.idea"
 touch "$eco/.work/42/spec.md" "$eco/local.mk" "$eco/docs/superpowers/plan.md" "$eco/openspec/changes/42/proposal.md" \
-  "$eco/.worktrees/docs/x" "$eco/.idea/workspace.xml"
-check_absent "doctor: does not warn about temporary files and IDE settings ignored on purpose" "\.work|local\.mk|superpowers|openspec/changes|\.worktrees|\.idea" \
+  "$eco/.worktrees/docs/x" "$eco/.idea/workspace.xml" "$eco/CLAUDE.local.md"
+check_absent "doctor: does not warn about temporary files and personal settings ignored on purpose" "\.work|local\.mk|superpowers|openspec/changes|\.worktrees|\.idea|CLAUDE\.local" \
   bash -c "cd '$eco' && ./bootstrap.sh doctor"
 
 eco="$(setup_filled doctor-todo)"
@@ -525,7 +653,7 @@ check_output "doctor: warns about template comments left in place" 0 "system-map
 
 eco="$(setup_filled doctor-stale-map)"
 sed -i.bak 's/^Last reviewed: .*/Last reviewed: 2020-01-01/' "$eco/docs/system-map.md" && rm "$eco/docs/system-map.md.bak"
-check_output "doctor: warns when the system map has not been reviewed for a long time" 0 "system-map.md.*2020-01-01" \
+check_output "doctor: warns when the system map has not been reviewed for a long time" 0 "system-map.md.*2020-01-01.*make map-review" \
   bash -c "cd '$eco' && ./bootstrap.sh doctor"
 
 eco="$(setup_filled doctor-ignored)"

@@ -5,6 +5,7 @@
 #   ./bootstrap.sh            clone/update the "core" repos
 #   ./bootstrap.sh --all      also include the "optional" repos
 #   ./bootstrap.sh status     show the branch and state of each repo and of its worktrees
+#   ./bootstrap.sh prune      remove the worktrees already merged and clean, with their local branch
 #   ./bootstrap.sh branch X   create branch X (the local one, the remote one someone else pushed,
 #                             or a new one from the main branch) in a worktree
 #                             <repo>/.worktrees/X of each given repo, without touching its main
@@ -27,6 +28,8 @@
 #   ./bootstrap.sh review N   review the implementation against the spec, in a new session
 #                             (creates the worktrees if needed). With AGENT_REVIEWER set to
 #                             another agent, that agent reviews first and yours checks its report
+#   ./bootstrap.sh respond N  deal with what keeps the open PRs of issue N from being merged:
+#                             failing checks, conflicts and reviewers' comments
 #   ./bootstrap.sh archive N  once every PR is merged: your agent writes the final summary and
 #                             checks docs/; then the summary is published, the issue closed and
 #                             its worktrees, branches and temporary files removed
@@ -35,6 +38,8 @@
 #                             issue, close it as not planned and remove worktrees, branches and
 #                             temporary files (does nothing if a PR is already merged)
 #
+#   ./bootstrap.sh map-review review docs/system-map.md against the code and open a PR of the
+#                             ecosystem repo with the changes (no issue)
 #   ./bootstrap.sh doctor     check the ecosystem repo is filled in and set up (placeholders, TODOs,
 #                             system map age, files left out by .gitignore, the git host CLI,
 #                             origin/HEAD, and that the ecosystem repo is on its main branch, up
@@ -49,7 +54,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/local-mk.sh
+source "$ROOT/scripts/local-mk.sh"
+load_local_mk
 LIST="$ROOT/repos.txt"
+# From the shell of an agent, the steps stay in its session (see scripts/agent.sh).
+AGENT_SESSION="${AGENT_SESSION:-$([[ -t 0 && -z "${CLAUDECODE:-}${CODEX_THREAD_ID:-}${CURSOR_AGENT:-}" ]] && echo new || echo current)}"
+export AGENT_SESSION
 
 # Main branch used when repos.txt does not set one for a repo.
 # Override for a single run with: DEFAULT_BRANCH=master ./bootstrap.sh
@@ -128,14 +139,21 @@ cmd_sync() {
       continue
     fi
 
-    # On the main branch with uncommitted changes: git cannot move the checked-out
-    # branch without touching your files, so only fetch. Your changes are left alone.
+    # On the main branch with uncommitted changes: git fast-forwards it if the new commits do
+    # not touch your files; if they do, it refuses without writing anything.
     if [[ "$branch" == "$main" ]]; then
-      if git -C "$dir" fetch --quiet origin "$main"; then
-        echo "   $dir: uncommitted changes on $main; fetched, pull once you commit them"
-        skipped=$((skipped + 1))
-      else
+      local merge_err
+      if ! git -C "$dir" fetch --quiet origin "$main"; then
         echo "!! $dir: could not fetch from the remote"; failed=$((failed + 1))
+      elif merge_err="$(git -C "$dir" merge --quiet --ff-only "origin/$main" 2>&1)"; then
+        echo "   $dir: $main updated; your uncommitted changes are intact"
+        updated=$((updated + 1))
+      else
+        echo "   $dir: uncommitted changes on $main clash with the new commits; nothing was touched"
+        # git lists the files involved, each after a tab.
+        grep $'^\t' <<< "$merge_err" | sed 's/^\t/      /'
+        echo "      commit or discard them and run sync again"
+        skipped=$((skipped + 1))
       fi
       continue
     fi
@@ -201,6 +219,63 @@ cmd_status() {
     done < <(git -C "$dir" worktree list --porcelain \
       | awk '/^worktree /{if (p) print p, b; p=substr($0, 10); b=""} /^branch /{b=substr($0, 19)} END{if (p) print p, b}')
   done < <(read_repos)
+
+  local merged
+  merged="$(all_merged_worktrees)"
+  if [[ -n "$merged" ]]; then
+    echo
+    echo "Worktrees already merged and clean (make prune removes them):"
+    while read -r path branch; do echo "  ${path#"$ROOT"/} ${branch:-(detached)}"; done <<< "$merged"
+  fi
+}
+
+# Worktrees of <dir> already merged, as "<path> <branch>": clean, and with their last commit
+# (and the one of their remote branch, if any) on origin/<main>, brought in by a merge. A new
+# worktree with no commits of its own is on the first-parent line of main and does not count.
+# Neither does a repo folder that is itself a worktree (it lives at the root).
+# merged_worktrees <dir> <main>
+merged_worktrees() {
+  local dir="$1" main="$2" mainline path head branch upstream
+  mainline="$(git -C "$dir" rev-list --first-parent "origin/$main" 2> /dev/null)" || return 0
+  while read -r path head branch; do
+    [[ "$path" == "$ROOT" || "$(dirname "$path")" == "$ROOT" ]] && continue
+    git -C "$dir" merge-base --is-ancestor "$head" "origin/$main" || continue
+    grep -qxF "$head" <<< "$mainline" && continue
+    [[ -z "$(git -C "$path" status --porcelain)" ]] || continue
+    # If the branch went on on the remote after the merge, someone is still working on it.
+    upstream="$(git -C "$path" rev-parse --quiet --verify "@{upstream}")" \
+      && ! git -C "$dir" merge-base --is-ancestor "$upstream" "origin/$main" && continue
+    echo "$path $branch"
+  done < <(git -C "$dir" worktree list --porcelain | tail -n +2 \
+    | awk '/^worktree /{if (p) print p, h, b; p=substr($0, 10); h=""; b=""} /^HEAD /{h=$2} /^branch /{b=substr($0, 19)} END{if (p) print p, h, b}')
+}
+
+# The merged worktrees of the ecosystem repo and of every cloned repo.
+all_merged_worktrees() {
+  local dir main
+  [[ -e "$ROOT/.git" ]] && merged_worktrees "$ROOT" "$(ecosystem_branch)"
+  while read -r dir _url _group main; do
+    [[ -e "$ROOT/$dir/.git" ]] && merged_worktrees "$ROOT/$dir" "$main"
+  done < <(read_repos)
+}
+
+# Removes the merged worktrees and their local branches. Remote branches are left to the git
+# host (deleted on merge) or to archive.
+cmd_prune() {
+  local path branch main removed=0
+  while read -r path branch; do
+    [[ -n "$path" ]] || continue
+    main="$(git -C "$path" worktree list --porcelain | sed -n '1s/^worktree //p')"
+    if ! git -C "$main" worktree remove "$path" 2> /dev/null; then
+      echo "!! could not remove ${path#"$ROOT"/} (files owned by another user?); remove it with sudo rm -rf and run git -C $main worktree prune"
+      continue
+    fi
+    # Already on origin/<main>: -D loses nothing even if the local main branch is behind.
+    [[ -z "$branch" ]] || git -C "$main" branch -D "$branch" > /dev/null
+    echo "-> removed ${path#"$ROOT"/} ${branch:-(detached)}"
+    removed=$((removed + 1))
+  done <<< "$(all_merged_worktrees)"
+  echo "Worktrees removed: $removed"
 }
 
 # Path of the worktree of <repo> that has <branch> checked out, or nothing.
@@ -375,6 +450,12 @@ cmd_explore() {
   exec scripts/agent.sh explore ${1:+"Idea: $1"}
 }
 
+# Reviews the whole system map against the code with the agent, without an issue.
+cmd_map_review() {
+  warn_ecosystem
+  exec scripts/agent.sh map-review
+}
+
 # Drafts go to a folder of their own in .work/ until the issue has a number: the agent
 # renames it to .work/<n>/ once it creates the issue.
 cmd_propose() {
@@ -386,10 +467,28 @@ cmd_propose() {
   exec scripts/agent.sh propose "Type: $type" "Draft: $draft" ${idea:+"Idea: $idea"}
 }
 
+# verify and review need eyes that did not write the spec or the code: a new session, with a UI
+# or without one (headless, the one the skills start from inside an agent).
+need_new_session() {
+  [[ "$AGENT_SESSION" == new || "$AGENT_SESSION" == headless ]] && return 0
+  echo "!! $1 needs a clean session: run it with the skill eco-$1, or from a terminal (./bootstrap.sh $1 <n>)" >&2
+  exit 1
+}
+
+# Without a UI nobody can answer: the agent only writes the report, and the session that started
+# it presents it to the person.
 cmd_verify() {
   warn_ecosystem
   need_issue verify "${1:-}"
-  exec scripts/agent.sh verify "$1"
+  need_new_session verify
+  local report=".work/$1/verify.md"
+  mkdir -p ".work/$1"
+  [[ "$AGENT_SESSION" == headless ]] || exec scripts/agent.sh verify "$1" "Report: $report"
+  rm -f "$report"
+  scripts/agent.sh verify "$1" "Report: $report" \
+    "No person: do only the \"Review\" and finish; another session presents the report." || exit 1
+  [[ -s "$report" ]] || { echo "!! The review ended with no report in $report" >&2; exit 1; }
+  printf '\nInstructions for this session: read the report in %s and follow "With the person" in prompts/verify.md.\n' "$report"
 }
 
 cmd_apply() {
@@ -400,11 +499,30 @@ cmd_apply() {
   exec scripts/agent.sh apply "$1" "Branch: $ISSUE_BRANCH" "Worktrees: $ISSUE_WORKTREES"
 }
 
+# Deals with what keeps the open PRs of an issue from being merged: failing checks, conflicts
+# and reviewers' comments. Works in the session that built the issue or in a new one.
+cmd_respond() {
+  warn_ecosystem
+  need_issue respond "${1:-}"
+  local n="$1" repo out state number url open=()
+  checkout_issue "$n" || exit 1
+  for repo in $ISSUE_REPOS; do
+    out="$(scripts/host.sh pr-list "$repo" "$ISSUE_BRANCH")" || { echo "!! $repo: its PRs could not be listed" >&2; exit 1; }
+    while read -r state number url; do
+      [[ "$state" == open ]] && open+=("Open PR of $repo: $number $url")
+    done <<< "$out"
+  done
+  [[ ${#open[@]} -gt 0 ]] || { echo "!! #$n has no open PR: there is nothing to deal with" >&2; exit 1; }
+  mkdir -p ".work/$n"
+  exec scripts/agent.sh respond "$n" "Branch: $ISSUE_BRANCH" "Worktrees: $ISSUE_WORKTREES" "${open[@]}"
+}
+
 # Reviewed in a new session, from the worktrees (from the remote branch if someone else built
 # it) and its PRs, against the spec.
 cmd_review() {
   warn_ecosystem
   need_issue review "${1:-}"
+  need_new_session review
   local n="$1" repo prs context=()
   checkout_issue "$n" || exit 1
   context=("Branch: $ISSUE_BRANCH" "Worktrees: $ISSUE_WORKTREES")
@@ -460,16 +578,28 @@ cmd_archive() {
     exit 1
   fi
 
-  summary=".work/$n/summary.md"
-  mkdir -p ".work/$n"
-  scripts/agent.sh archive "$n" "Branch: $branch" "Repos: ${repos//$'\n'/ }" "Summary: $summary" || true
-  [[ -s "$summary" ]] || { echo "!! No summary in $summary: #$n is not closed and nothing is removed" >&2; exit 1; }
-  scripts/host.sh issue-comment "$n" "$summary"
-  scripts/host.sh issue-close "$n" completed
+  # An issue already closed (by hand, or archived before) is only cleaned up.
+  local closed=""
+  [[ "$(scripts/host.sh issue-get "$n" state)" == closed ]] && closed=yes
+  if [[ -n "$closed" ]]; then
+    echo "-> #$n was already closed: only its worktrees and branches are removed"
+  else
+    summary=".work/$n/summary.md"
+    mkdir -p ".work/$n"
+    # In an agent's session it takes two runs: the first prints the instructions; once the agent
+    # runs it again with the approved summary, it publishes it and closes the issue.
+    if [[ "$AGENT_SESSION" != current || ! -s "$summary" ]]; then
+      scripts/agent.sh archive "$n" "Branch: $branch" "Repos: ${repos//$'\n'/ }" "Summary: $summary" || true
+      [[ "$AGENT_SESSION" != current ]] || exit 0
+    fi
+    [[ -s "$summary" ]] || { echo "!! No summary in $summary: #$n is not closed and nothing is removed" >&2; exit 1; }
+    scripts/host.sh issue-comment "$n" "$summary"
+    scripts/host.sh issue-close "$n" completed
+  fi
 
   for repo in $repos; do remove_issue_branch "$repo" "$branch"; done
   rm -rf ".work/$n"
-  echo "-> #$n closed, with the summary published"
+  [[ -n "$closed" ]] || echo "-> #$n closed, with the summary published"
 }
 
 # Drops an issue: closes its open PRs with the reason, publishes it on the issue, closes it as
@@ -480,7 +610,7 @@ cmd_reject() {
   warn_ecosystem
   need_issue reject "${1:-}"
   local n="$1" reason="${2:-}" out branch="" repos="" repo state number url problems=() closes=() pr
-  [[ -n "$reason" ]] || { echo "Give the reason: reject $n \\"<reason>\\"" >&2; exit 1; }
+  [[ -n "$reason" ]] || { echo "Give the reason: reject $n \"<reason>\"" >&2; exit 1; }
   if out="$(issue_branch "$n" 2> /dev/null)"; then
     branch="${out%%$'\n'*}"; repos="${out#*$'\n'}"
   else
@@ -614,7 +744,7 @@ cmd_doctor() {
     if [[ -n "$reviewed" ]] && epoch="$(to_epoch "$reviewed")"; then
       age=$(( ($(date +%s) - epoch) / 86400 ))
       if [[ $age -gt $max_age ]]; then
-        echo "   docs/system-map.md: last reviewed $reviewed, $age days ago (limit: $max_age)"
+        echo "   docs/system-map.md: last reviewed $reviewed, $age days ago (limit: $max_age): run make map-review"
         warnings=$((warnings + 1))
       fi
     elif ! grep -q '^Last reviewed: *<' docs/system-map.md; then
@@ -645,7 +775,7 @@ cmd_doctor() {
       [[ "$services" == *" $top "* ]] && continue
       # Personal settings (agent, IDE) and temporary files, ignored on purpose.
       case "$path" in
-        .claude/settings.local.json|local.mk|.work/*|.worktrees/*|docs/superpowers/*|openspec/changes/*|.idea/*) continue ;;
+        .claude/settings.local.json|CLAUDE.local.md|local.mk|.work/*|.worktrees/*|docs/superpowers/*|openspec/changes/*|.idea/*) continue ;;
       esac
       echo "   $path: ignored by .gitignore; if the team needs it, add it with '!' (see .gitignore)"
       warnings=$((warnings + 1))
@@ -675,12 +805,15 @@ cmd_tests() {
 
 case "${1:-}" in
   status) cmd_status ;;
+  prune) cmd_prune ;;
   branch) shift; cmd_branch "$@" ;;
   explore) shift; cmd_explore "$@" ;;
+  map-review) cmd_map_review ;;
   propose) shift; cmd_propose "$@" ;;
   verify) shift; cmd_verify "$@" ;;
   apply) shift; cmd_apply "$@" ;;
   review) shift; cmd_review "$@" ;;
+  respond) shift; cmd_respond "$@" ;;
   archive) shift; cmd_archive "$@" ;;
   reject) shift; cmd_reject "$@" ;;
   doctor) cmd_doctor ;;

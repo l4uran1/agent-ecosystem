@@ -1,0 +1,5 @@
+interface:
+  display_name: "eco-map-review"
+  short_description: "Review the system map"
+policy:
+  allow_implicit_invocation: false

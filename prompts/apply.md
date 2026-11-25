@@ -5,7 +5,7 @@ acceptance criteria say when it is done.
 
 ## Before starting
 
-- Read the `AGENTS.md` at the root and the one of each affected repo.
+- Read the `AGENTS.md` at the root, `docs/flow.md` and the `AGENTS.md` of each affected repo.
 - This session starts at the ecosystem root, so it does not see the repos' own agent skills or
   rules: look for them in the worktree of each affected repo (the paths are in "Context"), not
   in its main checkout, which may be on another branch, and read the ones that fit what you are
@@ -47,9 +47,13 @@ without it the code guesses.
 ## Before opening the PRs
 
 Run the change for real, not only its tests: start whatever it needs and go through what the
-user, or the service that calls it, does. Follow the repo's `AGENTS.md` to start it and check
-the change by hand (a call to the endpoint, the screen in the browser, the message on the
-queue). If it cannot run locally, say so in the PR and explain why. Keep the evidence (the
+user, or the service that calls it, does.
+
+- If `docs/verify/<repo>.md` exists in the ecosystem repo, follow it.
+- Otherwise, follow the repo's `AGENTS.md` to start it and check the change by hand (a call to
+  the endpoint, the screen in the browser, the message on the queue).
+- If it cannot run locally, say so in the PR and explain why.
+ Keep the evidence (the
 output, a trace, a screenshot) for the PR description.
 
 Go through `.work/<n>/pending.md` with the person, if it exists, and ask once for each point
@@ -71,5 +75,9 @@ what to do with it:
   (`scripts/host.sh issue-get <n> url`).
 - Never approve or merge a PR.
 - Tell the person what was done and which PRs were opened. The next step is
-  `make review I=<n>`. The review holds for the commits it reviewed: if you add more
-  afterwards, tell the person so they can run it again.
+  `eco-review <n>` (`make review I=<n>` from a terminal), which opens a separate session.
+  Once it finishes, if the person wants, fix here what it found: the
+  report is in `.work/<n>/review.md`. The review holds for the commits it reviewed: if you add
+  more afterwards, tell the person so they can run it again.
+- If the checks fail, there are conflicts or reviewers comment on the PRs, the step is
+  `eco-respond <n>` (`make respond I=<n>`), in this session or another one.

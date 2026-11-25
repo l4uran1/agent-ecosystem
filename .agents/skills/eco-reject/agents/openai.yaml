@@ -1,0 +1,5 @@
+interface:
+  display_name: "eco-reject"
+  short_description: "Drop an issue"
+policy:
+  allow_implicit_invocation: false

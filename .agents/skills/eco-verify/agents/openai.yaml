@@ -1,0 +1,5 @@
+interface:
+  display_name: "eco-verify"
+  short_description: "Review the spec of an issue"
+policy:
+  allow_implicit_invocation: false
