@@ -205,7 +205,8 @@ which you can also run directly.
 
 - **On the main branch, clean:** pulls.
 - **On another branch:** updates your local main branch in the background, without moving you.
-- **On the main branch with uncommitted changes:** only fetches; pull once you commit.
+- **On the main branch with uncommitted changes:** fast-forwards it if the new commits do not
+  touch your files; if they do, touches nothing and names the files.
 
 <details>
 <summary><b>If you use an SSH alias or HTTPS</b></summary>

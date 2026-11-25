@@ -128,14 +128,21 @@ cmd_sync() {
       continue
     fi
 
-    # On the main branch with uncommitted changes: git cannot move the checked-out
-    # branch without touching your files, so only fetch. Your changes are left alone.
+    # On the main branch with uncommitted changes: git fast-forwards it if the new commits do
+    # not touch your files; if they do, it refuses without writing anything.
     if [[ "$branch" == "$main" ]]; then
-      if git -C "$dir" fetch --quiet origin "$main"; then
-        echo "   $dir: uncommitted changes on $main; fetched, pull once you commit them"
-        skipped=$((skipped + 1))
-      else
+      local merge_err
+      if ! git -C "$dir" fetch --quiet origin "$main"; then
         echo "!! $dir: could not fetch from the remote"; failed=$((failed + 1))
+      elif merge_err="$(git -C "$dir" merge --quiet --ff-only "origin/$main" 2>&1)"; then
+        echo "   $dir: $main updated; your uncommitted changes are intact"
+        updated=$((updated + 1))
+      else
+        echo "   $dir: uncommitted changes on $main clash with the new commits; nothing was touched"
+        # git lists the files involved, each after a tab.
+        grep $'^\t' <<< "$merge_err" | sed 's/^\t/      /'
+        echo "      commit or discard them and run sync again"
+        skipped=$((skipped + 1))
       fi
       continue
     fi

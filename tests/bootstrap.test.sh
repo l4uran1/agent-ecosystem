@@ -451,6 +451,24 @@ echo wip > "$eco/web/wip"
 check "sync: exits 0 and leaves uncommitted changes on main alone" 0 \
   bash -c "cd '$eco' && ./bootstrap.sh > /dev/null && [[ \$(cat web/wip) == wip ]]"
 
+eco="$(setup sync-dirty-main-ff)"
+echo wip > "$eco/web/wip"
+git -C "$eco/../remote-web" commit -q --allow-empty -m c2
+check "sync: updates a main with uncommitted changes when the new commits do not touch them" 0 \
+  bash -c "cd '$eco' && ./bootstrap.sh > /dev/null && [[ \$(cat web/wip) == wip ]] \
+    && [[ \$(git -C web rev-parse HEAD) == \$(git -C ../remote-web rev-parse main) ]]"
+
+eco="$(setup sync-dirty-main-clash)"
+remote="$eco/../remote-web"
+echo v1 > "$remote/f" && git -C "$remote" add f && git -C "$remote" commit -q -m f1
+(cd "$eco" && ./bootstrap.sh > /dev/null)
+echo mine > "$eco/web/f"
+echo v2 > "$remote/f" && git -C "$remote" commit -q -am f2
+check_output "sync: names the files when uncommitted changes on main clash with the new commits" 0 "^      f$" \
+  bash -c "cd '$eco' && ./bootstrap.sh"
+check "sync: leaves clashing uncommitted changes on main untouched" 0 \
+  bash -c "[[ \$(cat '$eco/web/f') == mine ]]"
+
 eco="$(setup sync-fetch-fails)"
 rm -rf "$eco/../remote-web"
 check "sync: exits non-zero when a remote cannot be reached" 1 \
