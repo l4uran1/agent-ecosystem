@@ -47,10 +47,9 @@ Read it BEFORE proposing or implementing a change that:
 - reads or writes database tables owned by another service,
 - touches authentication or credentials shared between services.
 
-If your change creates, modifies or removes one of those contracts, say so in the
-*Contracts and sensitive areas* section of the spec. `make archive` checks at the end
-whether `docs/system-map.md` must change. Do not read it for changes that stay inside a
-single service.
+If your change creates, modifies or removes one of those contracts, say so in its spec and,
+once it is done, update `docs/system-map.md` (in the team's workflow, `make archive` checks
+it). Do not read it for changes that stay inside a single service.
 
 The full review of the map against the code, without an issue, is `make map-review`.
 `./bootstrap.sh doctor` warns when the map has not been reviewed for 90 days.
@@ -62,45 +61,22 @@ decisions. Read it when a change affects user-visible behaviour.
 
 The sensitive areas are listed in `docs/product/sensitive-areas.md`, and only there. A
 change that touches one, however small it looks, needs someone else on the team to review
-its spec on the issue before it is built.
+its spec on the issue before it is built, whatever the workflow.
 
 ## Workflow
 
-Every change, feature or bug, has an issue in the ecosystem repo whose body is the spec,
-written with `templates/spec.md`. The steps are in `README.md`: `explore`, `propose`, `verify`,
-`apply`, `review`, `respond`, `archive` and `reject`. Each one is a skill, `eco-<step>`
-(`.agents/skills/`), that runs `./bootstrap.sh <step>` with the instructions of
-`prompts/<step>.md`; from a terminal, `make <step>` does the same.
+The team's workflow is in `docs/flow.md`: each change has an issue in the ecosystem repo whose
+body is the spec, and it is worked on with the `eco-*` skills. Read it before starting a change
+and follow it, unless the person works with a workflow of their own: they will tell you, or
+their personal instructions will (see "With a workflow of your own" in `README.md`). Then
+follow theirs. The rest of this file applies with any workflow.
 
+- Every change has an issue in the ecosystem repo. Each affected repo gets its own PR, with the
+  issue title in its title and the link to the issue in its description. Only the upkeep of the
+  ecosystem repo itself (`chore/` branches, `make map-review`) goes without an issue.
 - The `eco-*` skills do not start on their own: only when the person names them. Never start a
   step of the workflow the person did not ask for.
-- If the person asks for a step without naming the skill, read and follow
-  `.agents/skills/eco-<step>/SKILL.md`. Run from an agent, the script does not open another
-  agent: it prints the instructions of the step, and you follow them here. `eco-verify` and
-  `eco-review` are the exception: they open a separate session without a UI, because they need
-  a clean one. Do not run `./bootstrap.sh verify` or `review` yourself without them: they
-  refuse.
-
-- The spec on the issue is the only source of what gets built. Do not write design documents
-  in the repos or in the ecosystem repo.
-- Temporary documents (drafts, plans, reports) go in `.work/<n>/`, which git ignores.
-  `make archive` and `make reject` delete it.
-- If the spec has to change during the implementation, say so before going on. Then update
-  the issue body (`scripts/host.sh issue-set-body`) and explain the change in a comment
-  (`scripts/host.sh issue-comment`).
-- Each affected repo gets its own PR, with the issue title in its title and the link to the
-  issue in its description.
-- OpenSpec and Superpowers are optional methods (`METHOD` in `local.mk`): they help to think,
-  write and build, but the result goes on the issue. Do not use `/opsx:propose` or
-  `/opsx:archive`.
-
-## Abandoning a change
-
-- Run `make reject I=<n> REASON="<reason>"`: it closes the open PRs with the reason, posts it
-  on the issue, closes the issue as not planned and removes worktrees, branches and
-  `.work/<n>/`. Anyone who wants to keep the work saves it first.
-- If a PR is already merged, `make reject` does nothing: first open a PR in that repo that
-  reverts it, following the spec's *Rollback*.
+- Never approve or merge a PR: a person does.
 
 ## TDD and verification (always)
 
@@ -134,9 +110,6 @@ written with `templates/spec.md`. The steps are in `README.md`: `explore`, `prop
 - Tag debugging logs with `[DEBUG-<n>]` and remove them before committing
   (`git grep '\[DEBUG-'` must find nothing).
 - First write a test that reproduces the bug and watch it fail.
-- Its issue is labelled `bug` (`make propose TYPE=bug`) and its branch is `fix/<n>-<slug>`.
-  If the issue already exists without the template, complete its body with it before
-  `make apply`.
 
 ## Reviewing someone else's PR
 

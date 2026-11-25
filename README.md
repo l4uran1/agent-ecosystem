@@ -84,8 +84,8 @@ mechanical part with a script and starts **your** agent with the instructions of
 | `make archive I=<n>` | Checks every PR is merged; then posts the summary, closes the issue and removes worktrees, branches and `.work/<n>/` | Writes the final summary. Checks `docs/` and, if something is out of date, opens a PR in the ecosystem repo |
 | `make reject I=<n> REASON="..."` | Closes the open PRs and the issue with the reason, and cleans up. Does nothing if a PR is already merged | — |
 
-Between `review` and `archive`, a person reviews and merges the code PRs. The full rules are
-in `AGENTS.md`.
+Between `review` and `archive`, a person reviews and merges the code PRs. The rules for the
+agent are in `docs/flow.md` (this workflow) and `AGENTS.md` (any workflow).
 
 **From your agent**, each step is also a skill of the ecosystem repo (`.agents/skills/`,
 linked from `.claude/skills/`): type `/eco-<step> <arguments>` in Claude Code or Cursor, or
@@ -177,6 +177,26 @@ make archive I=42
 
 </details>
 
+## With a workflow of your own
+
+If you already work with a workflow of your own (other skills, another tracker...), you can
+still use the ecosystem repo for what is shared: `AGENTS.md`, the system map, the product
+context and the `make` commands. Tell your agent once, in a personal file git does not share:
+
+| Agent | File | Content |
+| --- | --- | --- |
+| Claude Code | `CLAUDE.local.md` at the ecosystem root | `I work with my own workflow: do not follow docs/flow.md.` |
+| Codex | `~/.codex/AGENTS.md` | The same sentence |
+| Cursor | *Settings › Rules › User Rules* | The same sentence |
+
+In Codex, do not use `AGENTS.override.md`: it replaces `AGENTS.md`, and the agent loses the
+shared rules.
+
+The `eco-*` skills only start when you name them, so they do not get in your way. What holds
+with any workflow is in `AGENTS.md`: among other things, that every change has an issue with
+its title on each PR, that someone else reviews the spec of a change to a sensitive area before
+it is built, and that you update `docs/system-map.md` when you change a contract.
+
 ## What's in the template
 
 ```
@@ -190,6 +210,7 @@ your-ecosystem/                 ← this template
 ├── prompts/                    ← what the agent does in each step, and per method
 ├── scripts/                    ← agent.sh starts your agent; host.sh talks to GitHub or GitLab
 ├── docs/
+│   ├── flow.md                 ← the team's workflow, for the agent
 │   ├── system-map.md           ← contracts between services
 │   ├── reliability-checklist.md ← failures already seen, that can be spotted in a diff
 │   ├── review/                 ← per repo: what to review more carefully

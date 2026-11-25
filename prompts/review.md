@@ -34,7 +34,7 @@ which must print 0). If not, stop and tell the person: you would be judging with
 3. **Scope.** What the change does that the spec does not ask for, and what the spec asks for
    that is missing. What the implementer left for another issue is in `.work/<n>/pending.md`:
    it is not a defect if it is there and the spec does not ask for it.
-4. **Rules.** Those of the root `AGENTS.md` and of each repo's: TDD, tests, lint and build.
+4. **Rules.** Those of the root `AGENTS.md`, of `docs/flow.md` and of each repo's `AGENTS.md`: TDD, tests, lint and build.
    Run the repo's tests if you can.
 5. **Reliability checklist.** The items that apply, and whether the change meets them.
 

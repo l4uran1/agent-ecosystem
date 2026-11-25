@@ -5,7 +5,7 @@ acceptance criteria say when it is done.
 
 ## Before starting
 
-- Read the `AGENTS.md` at the root and the one of each affected repo.
+- Read the `AGENTS.md` at the root, `docs/flow.md` and the `AGENTS.md` of each affected repo.
 - This session starts at the ecosystem root, so it does not see the repos' own agent skills or
   rules: look for them in the worktree of each affected repo (the paths are in "Context"), not
   in its main checkout, which may be on another branch, and read the ones that fit what you are

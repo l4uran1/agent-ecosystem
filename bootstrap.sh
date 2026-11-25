@@ -775,7 +775,7 @@ cmd_doctor() {
       [[ "$services" == *" $top "* ]] && continue
       # Personal settings (agent, IDE) and temporary files, ignored on purpose.
       case "$path" in
-        .claude/settings.local.json|local.mk|.work/*|.worktrees/*|docs/superpowers/*|openspec/changes/*|.idea/*) continue ;;
+        .claude/settings.local.json|CLAUDE.local.md|local.mk|.work/*|.worktrees/*|docs/superpowers/*|openspec/changes/*|.idea/*) continue ;;
       esac
       echo "   $path: ignored by .gitignore; if the team needs it, add it with '!' (see .gitignore)"
       warnings=$((warnings + 1))

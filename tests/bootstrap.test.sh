@@ -637,8 +637,8 @@ check_output "doctor: warns when the git host CLI is not logged in" 0 "gh is not
 eco="$(setup_filled doctor-temporary)"
 mkdir -p "$eco/.work/42" "$eco/docs/superpowers" "$eco/openspec/changes/42" "$eco/.worktrees/docs" "$eco/.idea"
 touch "$eco/.work/42/spec.md" "$eco/local.mk" "$eco/docs/superpowers/plan.md" "$eco/openspec/changes/42/proposal.md" \
-  "$eco/.worktrees/docs/x" "$eco/.idea/workspace.xml"
-check_absent "doctor: does not warn about temporary files and IDE settings ignored on purpose" "\.work|local\.mk|superpowers|openspec/changes|\.worktrees|\.idea" \
+  "$eco/.worktrees/docs/x" "$eco/.idea/workspace.xml" "$eco/CLAUDE.local.md"
+check_absent "doctor: does not warn about temporary files and personal settings ignored on purpose" "\.work|local\.mk|superpowers|openspec/changes|\.worktrees|\.idea|CLAUDE\.local" \
   bash -c "cd '$eco' && ./bootstrap.sh doctor"
 
 eco="$(setup_filled doctor-todo)"
