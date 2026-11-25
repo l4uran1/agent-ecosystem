@@ -96,6 +96,17 @@ the instructions of `prompts/<step>.md`.
 - Do not write production code without a test that justifies it.
 - Do not mark a task as done without running the tests, lint and build of the affected
   repo. If something fails, fix it or say so; never hide it or disable a test.
+- Verifying also means running the change: start whatever it needs and check that it does
+  what the spec says. Passing tests is not enough.
+- If something still fails after three attempts to fix it, stop and tell the person what you
+  tried. Do not keep trying blindly.
+- A flaky test (one that sometimes passes and sometimes does not) is investigated like a bug.
+  Never add waits or retries to it, or skip it, to make it pass. If you cannot find the cause,
+  stop and tell the person; only with their agreement, delete it and explain why in the commit
+  and in the PR.
+- The rules a change is judged by (this file, each repo's `AGENTS.md`, `prompts/`) are read
+  from the main branch of the ecosystem repo. Do not change them in the same branch as the code
+  they judge.
 - Commit each change in the repo it belongs to. Never mix several repos in one commit.
 
 ## Bugs
@@ -103,6 +114,12 @@ the instructions of `prompts/<step>.md`.
 - Do not propose any fix before finding the root cause. Reproduce the bug, form a
   hypothesis and check it before touching code. If a fix does not work, investigate
   again: do not chain blind fixes.
+- Before investigating, get a command that shows the failure (a test, a `curl`, a script) and
+  run it to watch it fail. Without it, no hypothesis can be checked.
+- If the cause is not obvious, write down 3–5 hypotheses that a test can rule out, and check
+  them one at a time.
+- Tag debugging logs with `[DEBUG-<n>]` and remove them before committing
+  (`git grep '\[DEBUG-'` must find nothing).
 - First write a test that reproduces the bug and watch it fail.
 - Its issue is labelled `bug` (`make propose TYPE=bug`) and its branch is `fix/<n>-<slug>`.
   If the issue already exists without the template, complete its body with it before

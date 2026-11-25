@@ -8,6 +8,8 @@ someone who has to build it without being able to ask its author.
   - that it follows `templates/spec.md`;
   - that *Affected repos* lists every repo that must change, and no other;
   - that every acceptance criterion can be verified and that, together, they cover the change;
+  - that *How it's verified* gives each criterion a test that really proves it, and that it can
+    be run (if it asks for an end-to-end test, that there is a way to start that repo);
   - that there are no contradictions, gaps or decisions left open;
   - that *Contracts and sensitive areas* matches `docs/system-map.md` and
     `docs/product/sensitive-areas.md`;

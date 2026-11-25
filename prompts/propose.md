@@ -18,9 +18,18 @@ at the end of this message. If there is no idea, ask what should change.
 
 Write it in `<Draft>/spec.md`, following `templates/spec.md`:
 
+- *Context*: also the decisions taken and the alternatives discarded, and the new domain terms
+  with their meaning, if they are not in `docs/product/glossary.md`.
 - *Affected repos*: one repo per line (`- api`), with its name in `repos.txt`. The workflow
   commands create the branches from this list.
 - *Acceptance criteria*: each one verifiable on its own. `make review` checks them one by one.
+- *How it's verified*: for each criterion, the test that proves it. Prefer the one that is hard
+  to fool: an end-to-end test with the app running for what users see; a differential one (old
+  code against new, with the same inputs) for a migration or a rewrite that must not change
+  anything; a property-based one (idempotence, round trip, invariants) for what transforms
+  data. A unit test is enough for isolated logic. Test through the highest entry point that
+  already exists (the endpoint, the queue consumer), once rather than the same behaviour in
+  every layer, and agree on it with the person.
 - *Contracts and sensitive areas*: what changes according to `docs/system-map.md` and
   `docs/product/sensitive-areas.md`, or "None".
 

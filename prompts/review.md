@@ -10,11 +10,17 @@ In each worktree (see "Context" at the end), compare the branch with the remote 
 alone is not enough.
 
 1. **Acceptance criteria.** For each one, say whether it is met and show where: the code and
-   the test that proves it. A criterion without a test that covers it is not met.
+   the test that *How it's verified* asks for. A criterion without that test is not met;
+   neither is one proven with a weaker test (a unit test where the spec asks for an end-to-end
+   one), nor one whose test cannot fail (it checks the same thing it sets up) or depends on how
+   the code is written rather than on what it does (it counts calls to internal mocks, for
+   example). If the spec has no *How it's verified* (issues older than that section), a test
+   that covers the criterion is enough; say so in the report.
 2. **Bugs.** Logic errors, edge cases, data that can be lost or exposed, and concurrency or
    performance problems with real data.
 3. **Scope.** What the change does that the spec does not ask for, and what the spec asks for
-   that is missing.
+   that is missing. What the implementer left for another issue is in `.work/<n>/pending.md`:
+   it is not a defect if it is there and the spec does not ask for it.
 4. **Rules.** Those of the root `AGENTS.md` and of each repo's: TDD, tests, lint and build.
    Run the repo's tests if you can.
 
@@ -24,6 +30,8 @@ Do not change code, do not commit and do not comment on the PRs: the report is f
 
 Write it at the "Report" path (see "Context" at the end):
 
+- First, the reviewed commit of each worktree (`git -C <worktree> rev-parse HEAD`). The review
+  holds only for those commits.
 - A table with each acceptance criterion: met or not, and where.
 - The problems found, most serious first. Each with its file and line, what happens, the
   concrete case where it fails, and how to fix it.

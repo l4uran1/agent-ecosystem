@@ -507,10 +507,10 @@ check_output "doctor: warns when the git host CLI is not logged in" 0 "gh is not
   bash -c "cd '$eco' && ./bootstrap.sh doctor"
 
 eco="$(setup_filled doctor-temporary)"
-mkdir -p "$eco/.work/42" "$eco/docs/superpowers" "$eco/openspec/changes/42" "$eco/.worktrees/docs"
+mkdir -p "$eco/.work/42" "$eco/docs/superpowers" "$eco/openspec/changes/42" "$eco/.worktrees/docs" "$eco/.idea"
 touch "$eco/.work/42/spec.md" "$eco/local.mk" "$eco/docs/superpowers/plan.md" "$eco/openspec/changes/42/proposal.md" \
-  "$eco/.worktrees/docs/x"
-check_absent "doctor: does not warn about temporary files ignored on purpose" "\.work|local\.mk|superpowers|openspec/changes|\.worktrees" \
+  "$eco/.worktrees/docs/x" "$eco/.idea/workspace.xml"
+check_absent "doctor: does not warn about temporary files and IDE settings ignored on purpose" "\.work|local\.mk|superpowers|openspec/changes|\.worktrees|\.idea" \
   bash -c "cd '$eco' && ./bootstrap.sh doctor"
 
 eco="$(setup_filled doctor-todo)"
@@ -561,6 +561,16 @@ eco="$(setup_filled_remote doctor-eco-behind)"
 git clone -q "$eco/../remote-eco.git" "$eco/../other"
 git -C "$eco/../other" commit -q --allow-empty -m "merged later" && git -C "$eco/../other" push -q origin main
 check_output "doctor: warns when the ecosystem repo is behind its remote main branch" 0 "ecosystem repo is 1 commit\(s\) behind origin/main" \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+
+# origin/HEAD: git clone sets it, git init plus git remote add does not (as in setup_filled_remote).
+eco="$(setup_filled_remote doctor-origin-head)"
+check_output "doctor: warns when origin/HEAD is not set in the ecosystem repo" 0 "origin/HEAD is not set" \
+  bash -c "cd '$eco' && ./bootstrap.sh doctor"
+check "sync: sets origin/HEAD in the ecosystem repo when it is missing" 0 \
+  bash -c "cd '$eco' && ./bootstrap.sh > /dev/null \
+    && [[ \$(git symbolic-ref refs/remotes/origin/HEAD) == refs/remotes/origin/main ]]"
+check_absent "doctor: no warning once origin/HEAD is set" "origin/HEAD" \
   bash -c "cd '$eco' && ./bootstrap.sh doctor"
 
 echo
