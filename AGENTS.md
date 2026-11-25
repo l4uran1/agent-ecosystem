@@ -31,7 +31,7 @@ repo.
 - The ecosystem repo follows the same rule: its folder always stays on the main branch, up to
   date, because the workflow commands are its own files and another branch would run another
   version of them. Change the ecosystem repo itself (`AGENTS.md`, `docs/`, `prompts/`,
-  scripts) in a worktree of it, e.g. `git worktree add .worktrees/<branch> -b <branch> origin/HEAD`.
+  scripts) in a worktree of it, e.g. `git worktree add .worktrees/<branch> -b <branch> origin/main`.
   `./bootstrap.sh doctor` and the workflow commands warn when it is not on the main branch,
   up to date.
 

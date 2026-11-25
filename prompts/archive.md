@@ -34,7 +34,7 @@ Compare what changed (the code already merged on the main branch of each repo) w
 `docs/product/glossary.md`. If something is out of date:
 
 1. Create a worktree of the ecosystem repo from its up-to-date main branch:
-   `git fetch origin && git worktree add .worktrees/docs/<n> -b docs/<n> origin/HEAD`.
+   `git fetch origin && git worktree add .worktrees/docs/<n> -b docs/<n> origin/main`.
 2. Make the changes there, commit and push.
 3. Open the PR with the git host CLI. In its description: what changed and the link to the
    issue. Then remove the worktree: `git worktree remove .worktrees/docs/<n>`.
